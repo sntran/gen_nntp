@@ -75,12 +75,18 @@ defmodule GenNNTPTest do
 
       opts = [:binary, packet: :line, active: false]
       {:ok, socket} = :gen_tcp.connect('localhost', 119, opts)
-      %{socket: socket}
+      {:ok, greeting} = :gen_tcp.recv(socket, 0, 1000)
+      %{socket: socket, greeting: greeting}
     end
 
-    test "MUST send a 200 greeting", %{socket: socket} do
-      {:ok, data} = :gen_tcp.recv(socket, 0, 1000)
-      assert data =~ ~r/^200 /
+    test "MUST send a 200 greeting", %{greeting: greeting} do
+      assert greeting =~ ~r/^200 /
+    end
+
+    test "MUST send a 205 if the client sends QUIT", %{socket: socket} do
+      :ok = :gen_tcp.send(socket, "QUIT\r\n")
+      {:ok, data} = :gen_tcp.recv(socket, 0)
+      assert data =~ ~r/^205 /
     end
 
   end

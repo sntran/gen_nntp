@@ -146,6 +146,14 @@ handle_info(timeout, #client{module =Module, transport = Transport} = Client) ->
   Transport:send(Socket, "200 Service available, posting allowed\r\n"),
   {noreply, Client};
 
+% The client uses the QUIT command to terminate the session. The server
+% MUST acknowledge the QUIT command and then close the connection to
+% the client.
+handle_info({tcp, Socket, <<"QUIT\r\n">>}, #client{transport = Transport} = Client) ->
+  Transport:send(Socket, <<"205 Connection closing\r\n">>),
+  Transport:close(Socket),
+  {noreply, Client};
+
 handle_info({tcp, Socket, Line}, Client) ->
   #client{transport = Transport, module = Module, state = State} = Client,
   ok = Transport:setopts(Socket, [{active, once}]),
