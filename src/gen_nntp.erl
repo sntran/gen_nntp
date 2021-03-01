@@ -9,7 +9,9 @@
   connect/0,
   connect/1,
   connect/2,
-  connect/3
+  connect/3,
+  send/2,
+  send/3
 ]).
 
 %% gen_server callbacks
@@ -127,6 +129,19 @@ connect(Address, Port, _Options) ->
     {error, Reason} ->
       {error, Reason}
   end.
+
+%%-------------------------------------------------------------------
+%% @doc Sends a command to a NNTP socket
+%%
+%% The function will also wait for the response from server.
+%% @end
+%%-------------------------------------------------------------------
+send(Socket, Commamd) ->
+  send(Socket, Commamd, []).
+
+send(Socket, Command, _Args) when is_binary(Command) ->
+  ok = gen_tcp:send(Socket, <<Command/binary, "\r\n">>),
+  gen_tcp:recv(Socket, 0, 1000).
 
 %% ==================================================================
 %% ranch_protocol Callbacks

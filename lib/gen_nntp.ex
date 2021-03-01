@@ -28,6 +28,11 @@ defmodule GenNNTP do
   """
   defdelegate connect(address \\ "localhost", port \\ 119, options \\ []), to: :gen_nntp
 
+  @doc """
+  Sends a command and receives server's response.
+  """
+  defdelegate send(socket, command, args \\ []), to: :gen_nntp
+
   @callback init(any()) ::
     {:ok, state} | {:ok, state, timeout | :hibernate} |
     :ignore | {:stop, reason :: term}

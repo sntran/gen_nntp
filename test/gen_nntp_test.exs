@@ -75,6 +75,27 @@ defmodule GenNNTPTest do
 
   end
 
+  describe "send/3" do
+
+    setup do
+      GenNNTP.start(TestNNTPServer, [], [])
+      {:ok, socket, _greeting} = GenNNTP.connect()
+
+      %{socket: socket}
+    end
+
+    test "sends QUIT command", %{socket: socket} do
+      assert {:ok, response} = GenNNTP.send(socket, "QUIT", [])
+      assert response =~ ~r/^205 /
+    end
+
+    test "send/2 default to empty arguments", %{socket: socket} do
+      assert {:ok, response} = GenNNTP.send(socket, "QUIT")
+      assert response =~ ~r/^205 /
+    end
+
+  end
+
   describe "@callback init/1" do
 
     test "is called when a client connects to it" do
