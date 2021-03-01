@@ -5,7 +5,11 @@
 %% API
 -export([
   start/3,
-  stop/1
+  stop/1,
+  connect/0,
+  connect/1,
+  connect/2,
+  connect/3
 ]).
 
 %% gen_server callbacks
@@ -90,6 +94,38 @@ stop(Ref) ->
     _ -> ok
   catch
     _:_ -> ok
+  end.
+
+%%-------------------------------------------------------------------
+%% @doc Connects to a NNTP server.
+%%
+%% @end
+%%-------------------------------------------------------------------
+-spec connect() -> {ok, socket(), Greeting :: binary()} | {error, Reason :: timeout | inet:posix()}.
+connect() ->
+  connect("localhost", 119, []).
+
+-spec connect(address()) -> {ok, socket(), Greeting :: binary()} | {error, Reason :: timeout | inet:posix()}.
+connect(Address) ->
+  connect(Address, 119, []).
+
+-spec connect(address(), port_number()) -> {ok, socket(), Greeting :: binary()} | {error, Reason :: timeout | inet:posix()}.
+connect(Address, Port) ->
+  connect(Address, Port, []).
+
+-spec connect(address(), port_number(), [gen_tcp:connect_option()]) -> {ok, socket(), Greeting :: binary()} | {error, Reason :: timeout | inet:posix()}.
+connect(Address, Port, Options) when is_binary(Address) ->
+  connect(binary_to_list(Address), Port, Options);
+
+connect(Address, Port, _Options) ->
+  % @TODO: Merge default options with user-supplied options.
+  Options = [binary, {packet, line}, {active, false}],
+  case gen_tcp:connect(Address, Port, Options) of
+    {ok, Socket} ->
+      {ok, Greeting} = gen_tcp:recv(Socket, 0, 1000),
+      {ok, Socket, Greeting};
+    {error, Reason} ->
+      {error, Reason}
   end.
 
 %% ==================================================================

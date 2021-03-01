@@ -23,6 +23,11 @@ defmodule GenNNTP do
   @spec stop(module()) :: :ok
   defdelegate stop(ref), to: :gen_nntp
 
+  @doc """
+  Connects to a NNTP server.
+  """
+  defdelegate connect(address \\ "localhost", port \\ 119, options \\ []), to: :gen_nntp
+
   @callback init(any()) ::
     {:ok, state} | {:ok, state, timeout | :hibernate} |
     :ignore | {:stop, reason :: term}

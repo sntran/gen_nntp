@@ -41,6 +41,40 @@ defmodule GenNNTPTest do
 
   end
 
+  describe "connect/3" do
+
+    test "connects to a NNTP server" do
+      GenNNTP.start(TestNNTPServer, [], [])
+      assert {:ok, _socket, _greeting} = GenNNTP.connect("localhost", 119, [])
+    end
+
+    test "error if fail to connect to NNTP server" do
+      assert {:error, :econnrefused} = GenNNTP.connect("localhost", 119, [])
+    end
+
+    test "receives a greeting after connecting" do
+      GenNNTP.start(TestNNTPServer, [], [])
+      assert {:ok, _socket, greeting} = GenNNTP.connect("localhost", 119, [])
+      assert greeting =~ ~r/^20[0,1] /
+    end
+
+    test "connect/2 default to empty options" do
+      GenNNTP.start(TestNNTPServer, [], [])
+      assert {:ok, _socket, _greeting} = GenNNTP.connect("localhost", 119)
+    end
+
+    test "connect/1 default to port 119" do
+      GenNNTP.start(TestNNTPServer, [], [])
+      assert {:ok, _socket, _greeting} = GenNNTP.connect("localhost")
+    end
+
+    test "connect/0 default to localhost" do
+      GenNNTP.start(TestNNTPServer, [], [])
+      assert {:ok, _socket, _greeting} = GenNNTP.connect()
+    end
+
+  end
+
   describe "@callback init/1" do
 
     test "is called when a client connects to it" do

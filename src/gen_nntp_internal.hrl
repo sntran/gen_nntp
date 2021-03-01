@@ -1,1 +1,2 @@
 -type state() :: term().
+-type socket() :: gen_tcp:socket().
