@@ -124,6 +124,66 @@ defmodule GenNNTPTest do
 
   end
 
+  describe "@callback handle_CAPABILITIES/1" do
+
+    setup context do
+      capabilities = context[:capabilities] || []
+
+      TestNNTPServer.start(
+        handle_CAPABILITIES: fn(state) ->
+          Kernel.send(:tester, {:called_back, :handle_CAPABILITIES, 1})
+          {:ok, capabilities, state}
+        end
+      )
+
+      {:ok, socket, _greeting} = GenNNTP.connect()
+
+      %{socket: socket}
+    end
+
+    test "is called when the client asks for it", %{socket: socket} do
+
+      refute_receive(
+        {:called_back, :handle_CAPABILITIES, 1},
+        100,
+        "@callback handle_CAPABILITIES/1 should not be called when client has not asked for it"
+      )
+
+      :ok = :gen_tcp.send(socket, "CAPABILITIES\r\n")
+
+      assert_receive(
+        {:called_back, :handle_CAPABILITIES, 1},
+        100,
+        "@callback handle_CAPABILITIES/1 was not called"
+      )
+    end
+
+    test "is responded with 101 code", %{socket: socket} do
+      :ok = :gen_tcp.send(socket, "CAPABILITIES\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^101 /
+    end
+
+    @tag capabilities: ["VERSION 2", "HDR", "IHAVE", "LIST", "MODE-READER", "NEWNEWS", "OVER", "POST", "READER"]
+    test "is responded with capabilities returned from the callback", %{socket: socket, capabilities: capabilities} do
+      :ok = :gen_tcp.send(socket, "CAPABILITIES\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^101 /
+
+      for capability <- capabilities do
+        {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+        assert response === "#{capability}\r\n"
+      end
+      # Receives the termination line.
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response === ".\r\n"
+
+      # Should not receive any other message.
+      assert {:error, :timeout} = :gen_tcp.recv(socket, 0, 100)
+    end
+
+  end
+
   describe "server interaction" do
     setup do
       TestNNTPServer.start()

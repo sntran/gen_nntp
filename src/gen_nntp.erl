@@ -46,16 +46,17 @@
 }).
 
 -callback init(Args :: term()) ->
-            {ok, State :: state()}
+            {ok, state()}
             | ignore
             | {stop, Reason :: any()}.
 
--callback handle_command(Command :: binary(), State :: state()) ->
-            {reply, Response :: binary(), NewState}
-            | {noreply, NewState}
-            | {stop, Reason :: any(), NewState}
-            | {stop, Reason :: any, Response :: binary(), NewState}
-          when NewState :: state().
+-callback handle_CAPABILITIES(state()) -> {ok, Capabilities :: [binary()], state()}.
+
+-callback handle_command(Command :: binary(), state()) ->
+            {reply, Response :: binary(), state()}
+            | {noreply, state()}
+            | {stop, Reason :: any(), state()}
+            | {stop, Reason :: any, Response :: binary(), state()}.
 
 %% ==================================================================
 %% API
@@ -197,6 +198,21 @@ handle_info(timeout, #client{module =Module, transport = Transport} = Client) ->
   Transport:send(Socket, "200 Service available, posting allowed\r\n"),
   {noreply, Client};
 
+% Client asks for server's capabilities. Responds with 101 code.
+% Follows with the capabilities returned from `handle_CAPABILITIES/1` callback.
+handle_info({tcp, Socket, <<"CAPABILITIES\r\n">>}, #client{transport = Transport} = Client) ->
+  #client{transport = Transport, module = Module, state = State} = Client,
+  % Asks the callback module to provide the capacitities at this moment.
+  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
+
+  % Build multi-line data block responsefollowing the 101 response code.
+  Response = join(<<"\r\n">>, [<<"101 Capability list:">> | Capabilities]),
+
+  % Ends the multi-line data block with a termination line.
+  Transport:send(Socket, <<Response/binary, "\r\n.\r\n">>),
+
+  {noreply, Client#client{state = State1}};
+
 % The client uses the QUIT command to terminate the session. The server
 % MUST acknowledge the QUIT command and then close the connection to
 % the client.
@@ -257,3 +273,9 @@ terminate(_, _Client) -> ok.
 code_change(_OldVsn, Client, _Extra) ->
   % ..code to convert state (and more) during code change
   {ok, Client}.
+
+% Join binary
+join(_Separator, []) ->
+    <<>>;
+join(Separator, [H|T]) ->
+    lists:foldl(fun (Value, Acc) -> <<Acc/binary, Separator/binary, Value/binary>> end, H, T).

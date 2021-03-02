@@ -37,6 +37,8 @@ defmodule GenNNTP do
     {:ok, state} | {:ok, state, timeout | :hibernate} |
     :ignore | {:stop, reason :: term}
 
+  @callback handle_CAPABILITIES(state) :: {:ok, capabilities :: [String.t()], state}
+
   @callback handle_command(command :: String.t(), state) ::
     {:reply, response :: any(), state} |
     {:noreply, state} |

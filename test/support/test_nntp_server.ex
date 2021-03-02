@@ -12,7 +12,6 @@ defmodule TestNNTPServer do
   @behaviour GenNNTP
 
   @type callback :: {atom(), fun}
-  @typep state :: any()
 
   ## API
   @spec start([callback], [GenNNTP.option()]) :: :ignore | {:error, any()} | {:ok, pid()}
@@ -23,10 +22,6 @@ defmodule TestNNTPServer do
   ## GenNNTP callbacks
 
   @impl GenNNTP
-  @spec init(keyword()) ::
-          {:ok, state}
-          | :ignore
-          | {:stop, reason :: term}
   def init(options \\ []) do
     # Init arguments if any.
     args = Keyword.get(options, :args)
@@ -40,6 +35,19 @@ defmodule TestNNTPServer do
         client = Keyword.put(options, :state, state)
         {:ok, client, delay}
 
+      other ->
+        other
+    end
+  end
+
+  @impl GenNNTP
+  def handle_CAPABILITIES(client) do
+    state = client[:state]
+
+    case maybe_apply(client, :handle_CAPABILITIES, [state], {:ok, [], state}) do
+      {:ok, capabilities, state} ->
+        client = Keyword.put(client, :state, state)
+        {:ok, capabilities, client}
       other ->
         other
     end
