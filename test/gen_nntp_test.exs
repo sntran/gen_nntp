@@ -43,27 +43,29 @@ defmodule GenNNTPTest do
 
   describe "connect/3" do
 
+    @port String.to_integer(System.get_env("PORT", "119"))
+
     test "connects to a NNTP server" do
       GenNNTP.start(TestNNTPServer, [], [])
-      assert {:ok, _socket, _greeting} = GenNNTP.connect("localhost", 119, [])
+      assert {:ok, _socket, _greeting} = GenNNTP.connect("localhost", @port, [])
     end
 
     test "error if fail to connect to NNTP server" do
-      assert {:error, :econnrefused} = GenNNTP.connect("localhost", 119, [])
+      assert {:error, :econnrefused} = GenNNTP.connect("localhost", @port, [])
     end
 
     test "receives a greeting after connecting" do
       GenNNTP.start(TestNNTPServer, [], [])
-      assert {:ok, _socket, greeting} = GenNNTP.connect("localhost", 119, [])
+      assert {:ok, _socket, greeting} = GenNNTP.connect("localhost", @port, [])
       assert greeting =~ ~r/^20[0,1] /
     end
 
     test "connect/2 default to empty options" do
       GenNNTP.start(TestNNTPServer, [], [])
-      assert {:ok, _socket, _greeting} = GenNNTP.connect("localhost", 119)
+      assert {:ok, _socket, _greeting} = GenNNTP.connect("localhost", @port)
     end
 
-    test "connect/1 default to port 119" do
+    test "connect/1 default to port in PORT or 119" do
       GenNNTP.start(TestNNTPServer, [], [])
       assert {:ok, _socket, _greeting} = GenNNTP.connect("localhost")
     end
@@ -112,8 +114,7 @@ defmodule GenNNTPTest do
         "@callback init/1 should not be called when server starts"
       )
 
-      opts = [:binary, packet: :line, active: false]
-      {:ok, _socket} = :gen_tcp.connect('localhost', 119, opts)
+      {:ok, _socket, _greeting} = GenNNTP.connect()
 
       assert_receive(
         {:called_back, :init, 1},
@@ -187,10 +188,7 @@ defmodule GenNNTPTest do
   describe "server interaction" do
     setup do
       TestNNTPServer.start()
-
-      opts = [:binary, packet: :line, active: false]
-      {:ok, socket} = :gen_tcp.connect('localhost', 119, opts)
-      {:ok, greeting} = :gen_tcp.recv(socket, 0, 1000)
+      {:ok, socket, greeting} = GenNNTP.connect()
       %{socket: socket, greeting: greeting}
     end
 
