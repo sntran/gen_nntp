@@ -7,6 +7,8 @@ defmodule GenNNTP do
 
   @typep state :: any
 
+  @port String.to_integer(System.get_env("PORT", "119"))
+
   @doc """
   Starts a NNTP server with a callback module.
 
@@ -26,7 +28,7 @@ defmodule GenNNTP do
   @doc """
   Connects to a NNTP server.
   """
-  defdelegate connect(address \\ "localhost", port \\ 119, options \\ []), to: :gen_nntp
+  defdelegate connect(address \\ "localhost", port \\ @port, options \\ []), to: :gen_nntp
 
   @doc """
   Sends a command and receives server's response.

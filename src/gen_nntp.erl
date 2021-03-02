@@ -45,6 +45,8 @@
   state :: state()
 }).
 
+-define(PORT, list_to_integer(os:getenv("PORT", "119"))).
+
 -callback init(Args :: term()) ->
             {ok, state()}
             | ignore
@@ -72,7 +74,7 @@
 start(Module, Args, Options) when is_atom(Module) ->
   ok = application:ensure_started(ranch),
 
-  Port = proplists:get_value(port, Options, 119),
+  Port = proplists:get_value(port, Options, ?PORT),
   Options1 = proplists:delete(port, Options),
 
   ProtocolOpts = { Module, Args, Options1 },
@@ -106,11 +108,11 @@ stop(Ref) ->
 %%-------------------------------------------------------------------
 -spec connect() -> {ok, socket(), Greeting :: binary()} | {error, Reason :: timeout | inet:posix()}.
 connect() ->
-  connect("localhost", 119, []).
+  connect("localhost", ?PORT, []).
 
 -spec connect(address()) -> {ok, socket(), Greeting :: binary()} | {error, Reason :: timeout | inet:posix()}.
 connect(Address) ->
-  connect(Address, 119, []).
+  connect(Address, ?PORT, []).
 
 -spec connect(address(), port_number()) -> {ok, socket(), Greeting :: binary()} | {error, Reason :: timeout | inet:posix()}.
 connect(Address, Port) ->
