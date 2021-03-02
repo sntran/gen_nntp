@@ -75,7 +75,7 @@ defmodule GenNNTPTest do
 
   end
 
-  describe "send/3" do
+  describe "command/3" do
 
     setup do
       GenNNTP.start(TestNNTPServer, [], [])
@@ -85,12 +85,12 @@ defmodule GenNNTPTest do
     end
 
     test "sends QUIT command", %{socket: socket} do
-      assert {:ok, response} = GenNNTP.send(socket, "QUIT", [])
+      assert {:ok, response} = GenNNTP.command(socket, "QUIT", [])
       assert response =~ ~r/^205 /
     end
 
-    test "send/2 default to empty arguments", %{socket: socket} do
-      assert {:ok, response} = GenNNTP.send(socket, "QUIT")
+    test "command/2 default to empty arguments", %{socket: socket} do
+      assert {:ok, response} = GenNNTP.command(socket, "QUIT")
       assert response =~ ~r/^205 /
     end
 

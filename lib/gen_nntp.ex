@@ -31,7 +31,7 @@ defmodule GenNNTP do
   @doc """
   Sends a command and receives server's response.
   """
-  defdelegate send(socket, command, args \\ []), to: :gen_nntp
+  defdelegate command(socket, command, args \\ []), to: :gen_nntp
 
   @callback init(any()) ::
     {:ok, state} | {:ok, state, timeout | :hibernate} |

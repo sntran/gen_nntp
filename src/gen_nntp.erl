@@ -10,8 +10,8 @@
   connect/1,
   connect/2,
   connect/3,
-  send/2,
-  send/3
+  command/2,
+  command/3
 ]).
 
 %% gen_server callbacks
@@ -136,10 +136,10 @@ connect(Address, Port, _Options) ->
 %% The function will also wait for the response from server.
 %% @end
 %%-------------------------------------------------------------------
-send(Socket, Commamd) ->
-  send(Socket, Commamd, []).
+command(Socket, Commamd) ->
+  command(Socket, Commamd, []).
 
-send(Socket, Command, _Args) when is_binary(Command) ->
+command(Socket, Command, _Args) when is_binary(Command) ->
   ok = gen_tcp:send(Socket, <<Command/binary, "\r\n">>),
   gen_tcp:recv(Socket, 0, 1000).
 
