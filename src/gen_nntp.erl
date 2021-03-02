@@ -46,6 +46,17 @@
 }).
 
 -define(PORT, list_to_integer(os:getenv("PORT", "119"))).
+-define(NNTP_VERSION, <<"2">>).
+-define(CAPABILITIES, [
+  <<"HDR">>,
+  <<"IHAVE">>,
+  <<"LIST">>,
+  <<"MODE-READER">>,
+  <<"NEWNEWS">>,
+  <<"OVER">>,
+  <<"POST">>,
+  <<"READER">>
+]).
 
 -callback init(Args :: term()) ->
             {ok, state()}
@@ -207,8 +218,21 @@ handle_info({tcp, Socket, <<"CAPABILITIES\r\n">>}, #client{transport = Transport
   % Asks the callback module to provide the capacitities at this moment.
   {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
 
+  % Retrieve the VERSION capability from returned list if any.
+  Version = case lists:search(fun is_version/1, Capabilities) of
+    false -> <<"VERSION ", ?NNTP_VERSION/binary>>;
+    {value, Value} -> Value
+  end,
+
   % Build multi-line data block responsefollowing the 101 response code.
-  Response = join(<<"\r\n">>, [<<"101 Capability list:">> | Capabilities]),
+  Response = join(<<"\r\n">>, [
+    <<"101 Capability list:">>, % Command response with code
+    Version % Then the version
+    | [
+      % And all the standard capabilities.
+      X || X <- Capabilities, is_capability(X)
+    ]
+  ]),
 
   % Ends the multi-line data block with a termination line.
   Transport:send(Socket, <<Response/binary, "\r\n.\r\n">>),
@@ -275,6 +299,18 @@ terminate(_, _Client) -> ok.
 code_change(_OldVsn, Client, _Extra) ->
   % ..code to convert state (and more) during code change
   {ok, Client}.
+
+% Checks if a text match "VERSION" capability.
+is_version(<<"VERSION ", _N/binary>>) -> true;
+is_version(_) -> false.
+
+% VERSION is handled at server's level, so it's not a capability.
+is_capability(<<"VERSION ", _N/binary>>) ->
+  false;
+
+% Checks if the capability is in the standard list.
+is_capability(Capability) ->
+  lists:member(Capability, ?CAPABILITIES).
 
 % Join binary
 join(_Separator, []) ->

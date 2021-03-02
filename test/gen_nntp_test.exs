@@ -139,9 +139,15 @@ defmodule GenNNTPTest do
 
       {:ok, socket, _greeting} = GenNNTP.connect()
 
+      unless context[:skip_command] do
+        :ok = :gen_tcp.send(socket, "CAPABILITIES\r\n")
+        {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+      end
+
       %{socket: socket}
     end
 
+    @tag skip_command: true
     test "is called when the client asks for it", %{socket: socket} do
 
       refute_receive(
@@ -159,22 +165,20 @@ defmodule GenNNTPTest do
       )
     end
 
+    @tag skip_command: true
     test "is responded with 101 code", %{socket: socket} do
       :ok = :gen_tcp.send(socket, "CAPABILITIES\r\n")
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
       assert response =~ ~r/^101 /
     end
 
-    @tag capabilities: ["VERSION 2", "HDR", "IHAVE", "LIST", "MODE-READER", "NEWNEWS", "OVER", "POST", "READER"]
+    @tag capabilities: ["VERSION 2", "READER", "IHAVE", "POST", "NEWNEWS", "HDR", "OVER", "LIST", "MODE-READER"]
     test "is responded with capabilities returned from the callback", %{socket: socket, capabilities: capabilities} do
-      :ok = :gen_tcp.send(socket, "CAPABILITIES\r\n")
-      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
-      assert response =~ ~r/^101 /
-
       for capability <- capabilities do
         {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
         assert response === "#{capability}\r\n"
       end
+
       # Receives the termination line.
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
       assert response === ".\r\n"
@@ -182,6 +186,57 @@ defmodule GenNNTPTest do
       # Should not receive any other message.
       assert {:error, :timeout} = :gen_tcp.recv(socket, 0, 100)
     end
+
+    @tag capabilities: ["READER", "IHAVE", "POST", "NEWNEWS"]
+    test "prepends with VERSION if not provided", %{socket: socket, capabilities: capabilities} do
+      # Asserts that "VERSION" is always first in the response.
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^VERSION \d/
+
+      for capability <- capabilities do
+        {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+        assert response === "#{capability}\r\n"
+      end
+
+      # Receives the termination line.
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response === ".\r\n"
+    end
+
+    @tag capabilities: ["READER", "IHAVE", "VERSION 1", "POST", "NEWNEWS"]
+    test "moves VERSION to head", %{socket: socket, capabilities: capabilities} do
+      # Should respond with "VERSION 1" from the callback's return.
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response === "VERSION 1\r\n"
+
+      # Then the rest of the capabilities, without "VERSION 1".
+      for capability <- capabilities, !(capability =~ ~r/^VERSION \d/) do
+        {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+        assert response === "#{capability}\r\n"
+      end
+
+      # Receives the termination line.
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response === ".\r\n"
+    end
+
+    @tag capabilities: ["READER", "IHAVE", "AUTOUPDATE", "POST", "NEWNEWS"]
+    test "only takes actual capabilities",  %{socket: socket, capabilities: capabilities} do
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^VERSION \d/
+
+      # Should not respond with "AUTOUPDATE" since it's not standard.
+      for capability <- capabilities, capability !== "AUTOUPDATE" do
+        {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+        assert response === "#{capability}\r\n"
+      end
+
+      # Receives the termination line.
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response === ".\r\n"
+    end
+
+  end
 
   end
 
