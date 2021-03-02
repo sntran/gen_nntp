@@ -30,7 +30,4 @@ jobs:
       - name: Install dependencies
         run: mix deps.get
       - name: Run tests
-        run: |
-          mix compile --warnings-as-errors
-          mix format --check-formatted
-          mix test
+        run: mix test
