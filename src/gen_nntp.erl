@@ -64,12 +64,23 @@
             | {stop, Reason :: any()}.
 
 -callback handle_CAPABILITIES(state()) -> {ok, Capabilities :: [binary()], state()}.
+-callback handle_GROUP(Group, state()) ->
+            {ok, {
+              Group, Number :: non_neg_integer(),
+              Low :: non_neg_integer(),
+              High :: non_neg_integer()
+            }, state()}
+            | {ok, false, state()}
+            | {error, Reason :: binary(), state()}
+            when Group :: binary().
 
 -callback handle_command(Command :: binary(), state()) ->
             {reply, Response :: binary(), state()}
             | {noreply, state()}
             | {stop, Reason :: any(), state()}
             | {stop, Reason :: any, Response :: binary(), state()}.
+
+-optional_callbacks([handle_GROUP/2]).
 
 %% ==================================================================
 %% API
@@ -213,7 +224,7 @@ handle_info(timeout, #client{module =Module, transport = Transport} = Client) ->
 
 % Client asks for server's capabilities. Responds with 101 code.
 % Follows with the capabilities returned from `handle_CAPABILITIES/1` callback.
-handle_info({tcp, Socket, <<"CAPABILITIES\r\n">>}, #client{transport = Transport} = Client) ->
+handle_info({tcp, Socket, <<"CAPABILITIES\r\n">>}, Client) ->
   #client{transport = Transport, module = Module, state = State} = Client,
   % Asks the callback module to provide the capacitities at this moment.
   {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
@@ -238,6 +249,45 @@ handle_info({tcp, Socket, <<"CAPABILITIES\r\n">>}, #client{transport = Transport
   Transport:send(Socket, <<Response/binary, "\r\n.\r\n">>),
 
   {noreply, Client#client{state = State1}};
+
+handle_info({tcp, Socket, <<"GROUP ", GroupCRLF/binary>>}, Client) ->
+  % Removes the CRLF pair.
+  Group = string:chomp(GroupCRLF),
+  #client{transport = Transport, module = Module, state = State} = Client,
+  % Asks the callback module to provide the capacitities at this moment.
+  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
+
+  State2 = case lists:member(<<"READER">>, Capabilities) of
+    true ->
+      {ok, GroupInfo, NewState} = Module:handle_GROUP(Group, State1),
+
+      Response = case GroupInfo of
+        % Group exists
+        {Group, Number, Low, High} ->
+          join(<<" ">>, [
+            <<"211">>,
+            integer_to_binary(Number),
+            integer_to_binary(Low),
+            integer_to_binary(High),
+            Group,
+            <<"Group successfully selected">>
+          ]);
+        % No group
+        false ->
+          <<"411 No such newsgroup">>
+        end,
+
+        Transport:send(Socket, <<Response/binary, "\r\n">>),
+      NewState;
+    false ->
+      Transport:send(Socket, <<"411 No such newsgroup\r\n">>),
+      State1
+  end,
+
+  % Ready for the next command.
+  ok = Transport:setopts(Socket, [{active, once}]),
+
+  {noreply, Client#client{state = State2}};
 
 % The client uses the QUIT command to terminate the session. The server
 % MUST acknowledge the QUIT command and then close the connection to

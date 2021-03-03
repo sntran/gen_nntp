@@ -40,10 +40,22 @@ defmodule GenNNTP do
     :ignore | {:stop, reason :: term}
 
   @callback handle_CAPABILITIES(state) :: {:ok, capabilities :: [String.t()], state}
+  @callback handle_GROUP(group, state) ::
+    {:ok, {
+      group,
+      number: non_neg_integer(),
+      low: non_neg_integer(),
+      high: non_neg_integer()
+    }, state} |
+    {:ok, false, state} |
+    {:error, reason :: String.t(), state}
+    when group: String.t()
 
   @callback handle_command(command :: String.t(), state) ::
     {:reply, response :: any(), state} |
     {:noreply, state} |
     {:stop, reason :: any(), state} |
     {:stop, reason :: any(), response :: any(), state}
+
+  @optional_callbacks handle_GROUP: 2
 end

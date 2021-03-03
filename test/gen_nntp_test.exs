@@ -238,6 +238,94 @@ defmodule GenNNTPTest do
 
   end
 
+  describe "@callback handle_GROUP/2" do
+
+    setup context do
+      # Default to have "READER" capability for "GROUP" to work.
+      capabilities = context[:capabilities] || ["READER"]
+      groups = context[:groups] || [
+        {
+          "misc.test",
+          0, # Estimated number of articles in the group
+          0, # Article number of the first article in the group
+          0 # Article number of the last article in the group
+        }
+      ]
+
+      TestNNTPServer.start(
+        handle_CAPABILITIES: fn(state) ->
+          {:ok, capabilities, state}
+        end,
+        handle_GROUP: fn(group, state) ->
+          Kernel.send(:tester, {:called_back, :handle_GROUP, 2})
+
+          {:ok, List.keyfind(groups, group, 0, false), state}
+        end
+      )
+
+      {:ok, socket, _greeting} = GenNNTP.connect()
+
+      unless context[:skip_command] do
+        :ok = :gen_tcp.send(socket, "GROUP misc.test\r\n")
+        {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+      end
+
+      %{socket: socket}
+    end
+
+    @tag skip_command: true
+    test "is called when the client asks for it", %{socket: socket} do
+      refute_receive(
+        {:called_back, :handle_GROUP, 2},
+        100,
+        "@callback handle_GROUP/2 should not be called when client has not asked for it"
+      )
+
+      :ok = :gen_tcp.send(socket, "GROUP misc.test\r\n")
+
+      assert_receive(
+        {:called_back, :handle_GROUP, 2},
+        100,
+        "@callback handle_GROUP/2 was not called"
+      )
+    end
+
+    @tag skip_command: true
+    test "responds with `211 number low high group` when the client asks for it", %{socket: socket} do
+      :ok = :gen_tcp.send(socket, "GROUP misc.test\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      # This is unclear to me, as the specs say nothing about this case.
+      assert response =~ ~r/^211 0 0 0 misc\.test/
+    end
+
+    # The setup sets a list of capabilities with "READER" by default, so we empty it here.
+    @tag skip_command: true, capabilities: []
+    test "is not called when there is no READER capability", %{socket: socket} do
+      :ok = :gen_tcp.send(socket, "GROUP misc.test\r\n")
+
+      refute_receive(
+        {:called_back, :handle_GROUP, 2},
+        100,
+        "@callback handle_GROUP/2 should not be called when the server has no READ capability"
+      )
+    end
+
+    @tag skip_command: true, capabilities: []
+    test "responds with 411 when there is no READER capability", %{socket: socket} do
+      :ok = :gen_tcp.send(socket, "GROUP misc.test\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      # @sntran: This is unclear to me, as the specs say nothing about this case.
+      assert response =~ ~r/^411 /
+    end
+
+    @tag skip_command: true
+    test "responds with 411 when the group specified is not available", %{socket: socket} do
+      :ok = :gen_tcp.send(socket, "GROUP example.is.sob.bradner.or.barber\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      # @sntran: This is unclear to me, as the specs say nothing about this case.
+      assert response =~ ~r/^411 /
+    end
+
   end
 
   describe "server interaction" do
