@@ -1,6 +1,8 @@
 # gen_nntp
 
-**TODO: Add description**
+[![CI](https://github.com/sntran/gen_nntp/actions/workflows/elixir.yml/badge.svg)](https://github.com/sntran/gen_nntp/actions/workflows/elixir.yml)
+
+The Erlang NNTP client and server library.
 
 ## Installation
 
