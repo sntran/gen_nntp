@@ -33,7 +33,9 @@
 -export_type([
   name/0,
   option/0,
-  on_start/0
+  on_start/0,
+  message_id/0,
+  article/0
 ]).
 
 -include("gen_nntp.hrl").
@@ -64,6 +66,7 @@
             | {stop, Reason :: any()}.
 
 -callback handle_CAPABILITIES(state()) -> {ok, Capabilities :: [binary()], state()}.
+
 -callback handle_GROUP(Group, state()) ->
             {ok, {
               Group, Number :: non_neg_integer(),
@@ -74,13 +77,20 @@
             | {error, Reason :: binary(), state()}
             when Group :: binary().
 
+-callback handle_ARTICLE(Arg, state()) ->
+            {ok, { Number, article()}, state()}
+            | {ok, false, state()}
+            | {error, Reason :: binary(), state()}
+            when Number :: non_neg_integer(),
+                 Arg :: message_id() | Number.
+
 -callback handle_command(Command :: binary(), state()) ->
             {reply, Response :: binary(), state()}
             | {noreply, state()}
             | {stop, Reason :: any(), state()}
             | {stop, Reason :: any, Response :: binary(), state()}.
 
--optional_callbacks([handle_GROUP/2]).
+-optional_callbacks([handle_GROUP/2, handle_ARTICLE/2]).
 
 %% ==================================================================
 %% API
@@ -250,6 +260,49 @@ handle_info({tcp, Socket, <<"CAPABILITIES\r\n">>}, Client) ->
 
   {noreply, Client#client{state = State1}};
 
+% Client requests for an article by message ID.
+handle_info({tcp, Socket, <<"ARTICLE ", ArgCRLF/binary>>}, Client) ->
+  % Removes the CRLF pair.
+  Arg = string:chomp(ArgCRLF),
+  #client{transport = Transport, module = Module, state = State} = Client,
+  % Asks the callback module to provide the capacitities at this moment.
+  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
+
+  State2 = case lists:member(<<"READER">>, Capabilities) of
+    true ->
+      {ok, ArticleInfo, NewState} = Module:handle_ARTICLE(Arg, State1),
+
+      Response = case ArticleInfo of
+        % Article exists
+        {Number, {Id, Headers, Body}} ->
+
+          join(<<"\r\n">>, [
+            join(<<" ">>, [<<"220">>, integer_to_binary(Number), Id]),
+            maps:fold(fun(Header, Content, AccIn) ->
+              <<AccIn/binary, Header/binary, ": ", Content/binary, "\r\n">>
+            end, <<"">>, Headers),
+            Body,
+            <<".">>
+          ]);
+        % No article
+        false ->
+          <<"430 No article with that message-id">>
+        end,
+
+        Transport:send(Socket, <<Response/binary, "\r\n">>),
+      NewState;
+    false ->
+      Transport:send(Socket, <<"430 No article with that message-id\r\n">>),
+      State1
+  end,
+
+  % Ready for the next command.
+  ok = Transport:setopts(Socket, [{active, once}]),
+
+  {noreply, Client#client{state = State2}};
+
+% Client selects a newsgroup as the currently selected newsgroup and returns
+% summary information about it with 211 code, or 411 if not available.
 handle_info({tcp, Socket, <<"GROUP ", GroupCRLF/binary>>}, Client) ->
   % Removes the CRLF pair.
   Group = string:chomp(GroupCRLF),

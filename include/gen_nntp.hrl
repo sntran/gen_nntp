@@ -5,3 +5,9 @@
 -type on_start() :: {'ok', pid()} | 'ignore' |  {'error', {'already_started', pid()} | term()}.
 -type address() :: inet:socket_address() | inet:hostname() | binary().
 -type port_number() :: inet:port_number().
+-type message_id() :: binary().
+-type article() :: {
+  message_id(),
+  Headers :: map(),
+  Body :: binary()
+}.

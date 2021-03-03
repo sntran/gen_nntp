@@ -294,7 +294,6 @@ defmodule GenNNTPTest do
     test "responds with `211 number low high group` when the client asks for it", %{socket: socket} do
       :ok = :gen_tcp.send(socket, "GROUP misc.test\r\n")
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
-      # This is unclear to me, as the specs say nothing about this case.
       assert response =~ ~r/^211 0 0 0 misc\.test/
     end
 
@@ -306,7 +305,7 @@ defmodule GenNNTPTest do
       refute_receive(
         {:called_back, :handle_GROUP, 2},
         100,
-        "@callback handle_GROUP/2 should not be called when the server has no READ capability"
+        "@callback handle_GROUP/2 should not be called when the server has no READER capability"
       )
     end
 
@@ -322,8 +321,128 @@ defmodule GenNNTPTest do
     test "responds with 411 when the group specified is not available", %{socket: socket} do
       :ok = :gen_tcp.send(socket, "GROUP example.is.sob.bradner.or.barber\r\n")
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
-      # @sntran: This is unclear to me, as the specs say nothing about this case.
       assert response =~ ~r/^411 /
+    end
+
+  end
+
+  describe "@callback handle_ARTICLE/2" do
+
+    setup context do
+      # Default to have "READER" capability for "ARTICLE" to work.
+      capabilities = context[:capabilities] || ["READER"]
+      articles = context[:articles] || [
+        {
+          "<45223423@example.com>", # message ID.
+          # Headers
+          %{
+            "Path" => "pathost!demo!whitehouse!not-for-mail",
+            "From" => "'Demo User' <nobody@example.net>",
+            "Newsgroups" => "misc.test",
+            "Subject" => "I am just a test article",
+            "Date" => "6 Oct 1998 04:38:40 -0500",
+            "Organization" => "An Example Net, Uncertain, Texas",
+            "Message-ID" => "<45223423@example.com>"
+          },
+          # Body
+          "This is just a test article."
+        }
+      ]
+
+      TestNNTPServer.start(
+        handle_CAPABILITIES: fn(state) ->
+          {:ok, capabilities, state}
+        end,
+        handle_ARTICLE: fn(message_id, state) ->
+          Kernel.send(:tester, {:called_back, :handle_ARTICLE, 2})
+
+          case List.keyfind(articles, message_id, 0, false) do
+            false ->
+              {:ok, false, state}
+            article ->
+              {:ok, {0, article}, state}
+          end
+        end
+      )
+
+      {:ok, socket, _greeting} = GenNNTP.connect()
+
+      %{socket: socket, articles: articles}
+    end
+
+    test "is called when the client asks for it", %{socket: socket} do
+      refute_receive(
+        {:called_back, :handle_ARTICLE, 2},
+        100,
+        "@callback handle_ARTICLE/2 should not be called when client has not asked for it"
+      )
+
+      :ok = :gen_tcp.send(socket, "ARTICLE <45223423@example.com>\r\n")
+
+      assert_receive(
+        {:called_back, :handle_ARTICLE, 2},
+        100,
+        "@callback handle_ARTICLE/2 was not called"
+      )
+    end
+
+    test "responds with `220 number message_id article` when the client asks for it", context do
+      %{socket: socket, articles: articles} = context
+
+      message_id = "<45223423@example.com>"
+      :ok = :gen_tcp.send(socket, "ARTICLE #{message_id}\r\n")
+
+      # The response code with number and message_id
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response === "220 0 #{message_id}\r\n"
+
+      {^message_id, headers, body} = List.keyfind(articles, message_id, 0, false)
+
+      # Headers, one per line.
+      Enum.each(headers, fn({header, content}) ->
+        {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+        assert response === "#{header}: #{content}\r\n"
+      end)
+
+      # Then an empty line
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response === "\r\n"
+
+      # Then the body
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response === "#{body}\r\n"
+
+      # Then the termination line
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response === ".\r\n"
+
+    end
+
+    # The setup sets a list of capabilities with "READER" by default, so we empty it here.
+    @tag capabilities: []
+    test "is not called when there is no READER capability", %{socket: socket} do
+      :ok = :gen_tcp.send(socket, "ARTICLE <45223423@example.com>\r\n")
+
+      refute_receive(
+        {:called_back, :handle_ARTICLE, 2},
+        100,
+        "@callback handle_ARTICLE/2 should not be called when the server has no READER capability"
+      )
+    end
+
+    # The setup sets a list of capabilities with "READER" by default, so we empty it here.
+    @tag capabilities: []
+    test "responds with 430 when there is no READER capability", %{socket: socket} do
+      :ok = :gen_tcp.send(socket, "ARTICLE <45223423@example.com>\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      # @sntran: This is unclear to me, as the specs say nothing about this case.
+      assert response =~ ~r/^430 /
+    end
+
+    test "responds with 430 when the article specified is not available", %{socket: socket} do
+      :ok = :gen_tcp.send(socket, "ARTICLE <i.am.not.there@example.com>\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^430 /
     end
 
   end
