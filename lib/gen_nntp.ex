@@ -51,6 +51,17 @@ defmodule GenNNTP do
     {:error, reason :: String.t(), state}
     when group: String.t()
 
+  @callback handle_LISTGROUP(group, state) ::
+    {:ok, {
+      group,
+      number: non_neg_integer(),
+      low: non_neg_integer(),
+      high: non_neg_integer()
+    }, state} |
+    {:ok, false, state} |
+    {:error, reason :: String.t(), state}
+    when group: String.t()
+
   @callback handle_ARTICLE(arg, state) ::
     {:ok, { number, :gen_nttp.article()}, state }|
     {:ok, false, state} |
@@ -64,5 +75,9 @@ defmodule GenNNTP do
     {:stop, reason :: any(), state} |
     {:stop, reason :: any(), response :: any(), state}
 
-  @optional_callbacks handle_GROUP: 2, handle_ARTICLE: 2
+  @optional_callbacks [
+    handle_GROUP: 2,
+    handle_LISTGROUP: 2,
+    handle_ARTICLE: 2
+  ]
 end

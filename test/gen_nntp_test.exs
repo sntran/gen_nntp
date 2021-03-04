@@ -326,6 +326,148 @@ defmodule GenNNTPTest do
 
   end
 
+  describe "@callback handle_LISTGROUP/2" do
+
+    setup context do
+      # Default to have "READER" capability for "LISTGROUP" to work.
+      capabilities = context[:capabilities] || ["READER"]
+      groups = context[:groups] || [
+        {
+          "example.empty.newsgroup",
+          0, # Estimated number of articles in the group
+          0, # Article number of the first article in the group
+          0, # Article number of the last article in the group
+          [],
+        },
+        {
+          "misc.test",
+          2000, # Estimated number of articles in the group
+          3000234, # Article number of the first article in the group
+          3002322, # Article number of the last article in the group
+          [
+            3000234,
+            3000237,
+            3000238,
+            3000239,
+            3002322,
+          ],
+        }
+      ]
+
+      TestNNTPServer.start(
+        handle_CAPABILITIES: fn(state) ->
+          {:ok, capabilities, state}
+        end,
+        handle_LISTGROUP: fn(group, state) ->
+          Kernel.send(:tester, {:called_back, :handle_LISTGROUP, 2})
+
+          {:ok, List.keyfind(groups, group, 0, false), state}
+        end
+      )
+
+      {:ok, socket, _greeting} = GenNNTP.connect()
+
+      %{socket: socket, groups: groups}
+    end
+
+    test "is called when the client asks for it", %{socket: socket} do
+      refute_receive(
+        {:called_back, :handle_LISTGROUP, 2},
+        100,
+        "@callback handle_LISTGROUP/2 should not be called when client has not asked for it"
+      )
+
+      :ok = :gen_tcp.send(socket, "LISTGROUP misc.test\r\n")
+
+      assert_receive(
+        {:called_back, :handle_LISTGROUP, 2},
+        100,
+        "@callback handle_LISTGROUP/2 was not called"
+      )
+    end
+
+    test "responds with `211 number low high group numbers` when the client asks for it", context do
+      %{socket: socket, groups: groups} = context
+
+      group_name = "misc.test"
+      {^group_name, number, low, high, article_numbers} = List.keyfind(groups, group_name, 0, false)
+
+      :ok = :gen_tcp.send(socket, "LISTGROUP #{group_name}\r\n")
+
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^211 #{number} #{low} #{high} #{group_name}/
+
+      # Article numbers, one per line.
+      Enum.each(article_numbers, fn number ->
+        {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+        assert response === "#{number}\r\n"
+      end)
+
+      # Then the termination line
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response === ".\r\n"
+    end
+
+    # The setup sets a list of capabilities with "READER" by default, so we empty it here.
+    @tag capabilities: []
+    test "is not called when there is no READER capability", %{socket: socket} do
+      :ok = :gen_tcp.send(socket, "LISTGROUP misc.test\r\n")
+
+      refute_receive(
+        {:called_back, :handle_LISTGROUP, 2},
+        100,
+        "@callback handle_LISTGROUP/2 should not be called when the server has no READER capability"
+      )
+    end
+
+    @tag capabilities: []
+    test "responds with 411 when there is no READER capability", %{socket: socket} do
+      :ok = :gen_tcp.send(socket, "LISTGROUP misc.test\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      # @sntran: This is unclear to me, as the specs say nothing about this case.
+      assert response =~ ~r/^411 /
+    end
+
+    test "responds with 411 when the group specified is not available", %{socket: socket} do
+      :ok = :gen_tcp.send(socket, "LISTGROUP example.is.sob.bradner.or.barber\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^411 /
+    end
+
+    test "responds with 412 when no group specified and the currently selected newsgroup is invalid", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "LISTGROUP\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^412 /
+    end
+
+    test "responds with `211` when no group specified but currently selected newsgroup is valid", context do
+      %{socket: socket, groups: groups} = context
+
+      group_name = "misc.test"
+      {^group_name, number, low, high, article_numbers} = List.keyfind(groups, group_name, 0, false)
+
+      :ok = :gen_tcp.send(socket, "GROUP #{group_name}\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      :ok = :gen_tcp.send(socket, "LISTGROUP\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^211 #{number} #{low} #{high} #{group_name}/
+
+      # Article numbers, one per line.
+      Enum.each(article_numbers, fn number ->
+        {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+        assert response === "#{number}\r\n"
+      end)
+
+      # Then the termination line
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response === ".\r\n"
+    end
+
+  end
+
   describe "@callback handle_ARTICLE/2" do
 
     setup context do
@@ -420,7 +562,9 @@ defmodule GenNNTPTest do
 
     # The setup sets a list of capabilities with "READER" by default, so we empty it here.
     @tag capabilities: []
-    test "is not called when there is no READER capability", %{socket: socket} do
+    test "is not called when there is no READER capability", context do
+      %{socket: socket} = context
+
       :ok = :gen_tcp.send(socket, "ARTICLE <45223423@example.com>\r\n")
 
       refute_receive(
@@ -432,14 +576,18 @@ defmodule GenNNTPTest do
 
     # The setup sets a list of capabilities with "READER" by default, so we empty it here.
     @tag capabilities: []
-    test "responds with 430 when there is no READER capability", %{socket: socket} do
+    test "responds with 430 when there is no READER capability", context do
+      %{socket: socket} = context
+
       :ok = :gen_tcp.send(socket, "ARTICLE <45223423@example.com>\r\n")
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
       # @sntran: This is unclear to me, as the specs say nothing about this case.
       assert response =~ ~r/^430 /
     end
 
-    test "responds with 430 when the article specified is not available", %{socket: socket} do
+    test "responds with 430 when the article specified is not available", context do
+      %{socket: socket} = context
+
       :ok = :gen_tcp.send(socket, "ARTICLE <i.am.not.there@example.com>\r\n")
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
       assert response =~ ~r/^430 /

@@ -44,6 +44,8 @@
 -record(client, {
   transport :: module(),
   module :: module(),
+  % currently selected newsgroup
+  group :: invalid | binary(),
   state :: state()
 }).
 
@@ -77,6 +79,16 @@
             | {error, Reason :: binary(), state()}
             when Group :: binary().
 
+-callback handle_LISTGROUP(Group, state()) ->
+            {ok, {
+              Group, Number :: non_neg_integer(),
+              Low :: non_neg_integer(),
+              High :: non_neg_integer()
+            }, state()}
+            | {ok, false, state()}
+            | {error, Reason :: binary(), state()}
+            when Group :: binary().
+
 -callback handle_ARTICLE(Arg, state()) ->
             {ok, { Number, article()}, state()}
             | {ok, false, state()}
@@ -90,7 +102,11 @@
             | {stop, Reason :: any(), state()}
             | {stop, Reason :: any, Response :: binary(), state()}.
 
--optional_callbacks([handle_GROUP/2, handle_ARTICLE/2]).
+-optional_callbacks([
+  handle_GROUP/2,
+  handle_LISTGROUP/2,
+  handle_ARTICLE/2
+]).
 
 %% ==================================================================
 %% API
@@ -201,7 +217,9 @@ init({ Transport, { Module, Args, _Options } }) ->
 
   Client = #client{
     transport = Transport,
-    module = Module
+    module = Module,
+    % At the start of an NNTP session, selected newsgroup is set to invalid.
+    group = invalid
   },
 
   case Module:init(Args) of
@@ -260,6 +278,113 @@ handle_info({tcp, Socket, <<"CAPABILITIES\r\n">>}, Client) ->
 
   {noreply, Client#client{state = State1}};
 
+% Client selects a newsgroup as the currently selected newsgroup and returns
+% summary information about it with 211 code, or 411 if not available.
+% When a valid group is selected by means of this command, the currently
+% selected newsgroup MUST be set to that group.
+handle_info({tcp, Socket, <<"GROUP ", GroupCRLF/binary>>}, Client) ->
+  % Removes the CRLF pair.
+  Group = string:chomp(GroupCRLF),
+  #client{
+    transport = Transport, module = Module,
+    group = SelectedGroup, state = State
+  } = Client,
+
+  % Asks the callback module to provide the capacitities at this moment.
+  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
+
+  {NewGroup, NewState} = case lists:member(<<"READER">>, Capabilities) of
+    true ->
+      {ok, GroupInfo, State2} = Module:handle_GROUP(Group, State1),
+
+      Response = case GroupInfo of
+        % Group exists
+        {Group, Number, Low, High} ->
+          join(<<" ">>, [
+            <<"211">>,
+            integer_to_binary(Number),
+            integer_to_binary(Low),
+            integer_to_binary(High),
+            Group,
+            <<"Group successfully selected">>
+          ]);
+        % No group
+        false ->
+          <<"411 No such newsgroup">>
+        end,
+
+        Transport:send(Socket, <<Response/binary, "\r\n">>),
+      {Group, State2};
+    false ->
+      Transport:send(Socket, <<"411 No such newsgroup\r\n">>),
+      {SelectedGroup, State1}
+  end,
+
+  % Ready for the next command.
+  ok = Transport:setopts(Socket, [{active, once}]),
+
+  {noreply, Client#client{group = NewGroup, state = NewState}};
+
+% Client selects a newsgroup as the currently selected newsgroup and returns
+% summary information about it with 211 code, or 411 if not available.
+% It also provides a list of article numbers in the newsgroup.
+% If no group is specified and the currently selected newsgroup is invalid,
+% a 412 response MUST be returned.
+% @TODO: Handle `range` argument.
+handle_info({tcp, Socket, <<"LISTGROUP\r\n">>}, #client{group = invalid, transport = Transport} = Client) ->
+  Transport:send(Socket, <<"412 No newsgroup selected\r\n">>),
+  {noreply, Client};
+
+handle_info({tcp, Socket, <<"LISTGROUP\r\n">>}, #client{group = Group} = Client) ->
+  handle_info({tcp, Socket, <<"LISTGROUP ", Group/binary, "\r\n">>}, Client);
+
+handle_info({tcp, Socket, <<"LISTGROUP ", GroupCRLF/binary>>}, Client) ->
+  % Removes the CRLF pair.
+  Group = string:chomp(GroupCRLF),
+  #client{transport = Transport, module = Module, state = State} = Client,
+  % Asks the callback module to provide the capacitities at this moment.
+  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
+
+  NewState = case lists:member(<<"READER">>, Capabilities) of
+    true ->
+      {ok, GroupInfo, State2} = Module:handle_LISTGROUP(Group, State1),
+
+      Response = case GroupInfo of
+        % Group exists
+        {Group, Number, Low, High, ArticleNumbers} ->
+          GroupLine = join(<<" ">>, [
+            <<"211">>,
+            integer_to_binary(Number),
+            integer_to_binary(Low),
+            integer_to_binary(High),
+            Group,
+            <<"list follows">>
+          ]),
+
+          join(<<"\r\n">>, [
+            GroupLine,
+            lists:foldr(fun(ArticleNumber, AccIn) ->
+              ArticleNumberBinary = integer_to_binary(ArticleNumber),
+              <<ArticleNumberBinary/binary, "\r\n", AccIn/binary>>
+            end, <<".">>, ArticleNumbers)
+          ]);
+        % No group
+        false ->
+          <<"411 No such newsgroup">>
+        end,
+
+        Transport:send(Socket, <<Response/binary, "\r\n">>),
+      State2;
+    false ->
+      Transport:send(Socket, <<"411 No such newsgroup\r\n">>),
+      State1
+  end,
+
+  % Ready for the next command.
+  ok = Transport:setopts(Socket, [{active, once}]),
+
+  {noreply, Client#client{state = NewState}};
+
 % Client requests for an article by message ID.
 handle_info({tcp, Socket, <<"ARTICLE ", ArgCRLF/binary>>}, Client) ->
   % Removes the CRLF pair.
@@ -293,47 +418,6 @@ handle_info({tcp, Socket, <<"ARTICLE ", ArgCRLF/binary>>}, Client) ->
       NewState;
     false ->
       Transport:send(Socket, <<"430 No article with that message-id\r\n">>),
-      State1
-  end,
-
-  % Ready for the next command.
-  ok = Transport:setopts(Socket, [{active, once}]),
-
-  {noreply, Client#client{state = State2}};
-
-% Client selects a newsgroup as the currently selected newsgroup and returns
-% summary information about it with 211 code, or 411 if not available.
-handle_info({tcp, Socket, <<"GROUP ", GroupCRLF/binary>>}, Client) ->
-  % Removes the CRLF pair.
-  Group = string:chomp(GroupCRLF),
-  #client{transport = Transport, module = Module, state = State} = Client,
-  % Asks the callback module to provide the capacitities at this moment.
-  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
-
-  State2 = case lists:member(<<"READER">>, Capabilities) of
-    true ->
-      {ok, GroupInfo, NewState} = Module:handle_GROUP(Group, State1),
-
-      Response = case GroupInfo of
-        % Group exists
-        {Group, Number, Low, High} ->
-          join(<<" ">>, [
-            <<"211">>,
-            integer_to_binary(Number),
-            integer_to_binary(Low),
-            integer_to_binary(High),
-            Group,
-            <<"Group successfully selected">>
-          ]);
-        % No group
-        false ->
-          <<"411 No such newsgroup">>
-        end,
-
-        Transport:send(Socket, <<Response/binary, "\r\n">>),
-      NewState;
-    false ->
-      Transport:send(Socket, <<"411 No such newsgroup\r\n">>),
       State1
   end,
 
