@@ -154,19 +154,19 @@ stop(Ref) ->
 %%
 %% @end
 %%-------------------------------------------------------------------
--spec connect() -> {ok, socket(), Greeting :: binary()} | {error, Reason :: timeout | inet:posix()}.
+-spec connect() -> {ok, socket(), Greeting :: binary()} | {error, connect_error()}.
 connect() ->
   connect("localhost", ?PORT, []).
 
--spec connect(address()) -> {ok, socket(), Greeting :: binary()} | {error, Reason :: timeout | inet:posix()}.
+-spec connect(address()) -> {ok, socket(), Greeting :: binary()} | {error, connect_error()}.
 connect(Address) ->
   connect(Address, ?PORT, []).
 
--spec connect(address(), port_number()) -> {ok, socket(), Greeting :: binary()} | {error, Reason :: timeout | inet:posix()}.
+-spec connect(address(), port_number()) -> {ok, socket(), Greeting :: binary()} | {error, connect_error()}.
 connect(Address, Port) ->
   connect(Address, Port, []).
 
--spec connect(address(), port_number(), [gen_tcp:connect_option()]) -> {ok, socket(), Greeting :: binary()} | {error, Reason :: timeout | inet:posix()}.
+-spec connect(address(), port_number(), [gen_tcp:connect_option()]) -> {ok, socket(), Greeting :: binary()} | {error, connect_error()}.
 connect(Address, Port, Options) when is_binary(Address) ->
   connect(binary_to_list(Address), Port, Options);
 
@@ -187,11 +187,22 @@ connect(Address, Port, _Options) ->
 %% The function will also wait for the response from server.
 %% @end
 %%-------------------------------------------------------------------
+-spec command(socket(), binary()) -> {ok, binary()} | {error, recv_error()}.
 command(Socket, Commamd) ->
   command(Socket, Commamd, []).
 
+-spec command(socket(), binary(), Args :: list()) -> {ok, binary()} | {error, recv_error()}.
 command(Socket, Command, _Args) when is_binary(Command) ->
   ok = gen_tcp:send(Socket, <<Command/binary, "\r\n">>),
+  recv(Socket, Command).
+
+recv(Socket, <<"CAPABILITIES">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, <<"LISTGROUP">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, <<"ARTICLE">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, _Command) ->
   gen_tcp:recv(Socket, 0, 1000).
 
 %% ==================================================================
@@ -486,6 +497,24 @@ handle_command(Command, Client) ->
 %% ==================================================================
 %% Internal Funtions
 %% ==================================================================
+
+% Collects a multi-line response from a socket.
+% Stops when encountered a ".". Last CRLF is removed.
+-spec multiline(socket(), {ok, binary()} | {error, recv_error()}) ->
+  {ok, binary()} | {error, Reason :: binary()}.
+multiline(_Socket, {error, Reason}) ->
+  {error, Reason};
+
+multiline(Socket, {ok, Acc}) ->
+  case gen_tcp:recv(Socket, 0, 1000) of
+    % End of the multi-line response.
+    {ok, <<".\r\n">>} ->
+      {ok, string:chomp(Acc)};
+    {ok, Line} when is_binary(Line) ->
+      multiline(Socket, {ok, <<Acc/binary, Line/binary>>});
+    {error, Reason} ->
+      {error, Reason}
+  end.
 
 % Checks if a text match "VERSION" capability.
 %% @private

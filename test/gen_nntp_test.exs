@@ -77,27 +77,6 @@ defmodule GenNNTPTest do
 
   end
 
-  describe "command/3" do
-
-    setup do
-      GenNNTP.start(TestNNTPServer, [], [])
-      {:ok, socket, _greeting} = GenNNTP.connect()
-
-      %{socket: socket}
-    end
-
-    test "sends QUIT command", %{socket: socket} do
-      assert {:ok, response} = GenNNTP.command(socket, "QUIT", [])
-      assert response =~ ~r/^205 /
-    end
-
-    test "command/2 default to empty arguments", %{socket: socket} do
-      assert {:ok, response} = GenNNTP.command(socket, "QUIT")
-      assert response =~ ~r/^205 /
-    end
-
-  end
-
   describe "@callback init/1" do
 
     test "is called when a client connects to it" do
@@ -591,6 +570,44 @@ defmodule GenNNTPTest do
       :ok = :gen_tcp.send(socket, "ARTICLE <i.am.not.there@example.com>\r\n")
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
       assert response =~ ~r/^430 /
+    end
+
+  end
+
+  describe "command/3" do
+
+    setup context do
+      capabilities = context[:capabilities] || ["READER", "IHAVE", "POST", "NEWNEWS", "HDR", "OVER", "LIST", "MODE-READER"]
+
+      TestNNTPServer.start(
+        handle_CAPABILITIES: fn(state) ->
+          {:ok, capabilities, state}
+        end
+      )
+      {:ok, socket, _greeting} = GenNNTP.connect()
+
+      %{socket: socket, capabilities: capabilities}
+    end
+
+    test "sends QUIT command", %{socket: socket} do
+      assert {:ok, response} = GenNNTP.command(socket, "QUIT", [])
+      assert response =~ ~r/^205 /
+    end
+
+    test "command/2 default to empty arguments", %{socket: socket} do
+      assert {:ok, response} = GenNNTP.command(socket, "QUIT")
+      assert response =~ ~r/^205 /
+    end
+
+    test "handles multi-line response", context do
+      %{socket: socket, capabilities: capabilities} = context
+
+      assert {:ok, response} = GenNNTP.command(socket, "CAPABILITIES")
+      assert response === String.trim("""
+      101 Capability list:\r
+      VERSION 2\r
+      #{ Enum.join(capabilities, "\r\n")}
+      """)
     end
 
   end
