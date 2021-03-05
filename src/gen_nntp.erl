@@ -250,212 +250,28 @@ handle_info(timeout, #client{module =Module, transport = Transport} = Client) ->
   Transport:send(Socket, "200 Service available, posting allowed\r\n"),
   {noreply, Client};
 
-% Client asks for server's capabilities. Responds with 101 code.
-% Follows with the capabilities returned from `handle_CAPABILITIES/1` callback.
-handle_info({tcp, Socket, <<"CAPABILITIES\r\n">>}, Client) ->
-  #client{transport = Transport, module = Module, state = State} = Client,
-  % Asks the callback module to provide the capacitities at this moment.
-  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
-
-  % Retrieve the VERSION capability from returned list if any.
-  Version = case lists:search(fun is_version/1, Capabilities) of
-    false -> <<"VERSION ", ?NNTP_VERSION/binary>>;
-    {value, Value} -> Value
-  end,
-
-  % Build multi-line data block responsefollowing the 101 response code.
-  Response = join(<<"\r\n">>, [
-    <<"101 Capability list:">>, % Command response with code
-    Version % Then the version
-    | [
-      % And all the standard capabilities.
-      X || X <- Capabilities, is_capability(X)
-    ]
-  ]),
-
-  % Ends the multi-line data block with a termination line.
-  Transport:send(Socket, <<Response/binary, "\r\n.\r\n">>),
-
-  {noreply, Client#client{state = State1}};
-
-% Client selects a newsgroup as the currently selected newsgroup and returns
-% summary information about it with 211 code, or 411 if not available.
-% When a valid group is selected by means of this command, the currently
-% selected newsgroup MUST be set to that group.
-handle_info({tcp, Socket, <<"GROUP ", GroupCRLF/binary>>}, Client) ->
+% Command message from the client.
+handle_info({tcp, Socket, Line}, #client{transport = Transport} = Client) ->
   % Removes the CRLF pair.
-  Group = string:chomp(GroupCRLF),
-  #client{
-    transport = Transport, module = Module,
-    group = SelectedGroup, state = State
-  } = Client,
+  Command = string:chomp(Line),
 
-  % Asks the callback module to provide the capacitities at this moment.
-  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
+  case handle_command(Command, Client) of
+    {reply, Reply, NewClient} ->
+      Transport:send(Socket, [Reply, "\r\n"]),
+      ok = Transport:setopts(Socket, [{active, once}]),
+      {noreply, NewClient};
 
-  {NewGroup, NewState} = case lists:member(<<"READER">>, Capabilities) of
-    true ->
-      {ok, GroupInfo, State2} = Module:handle_GROUP(Group, State1),
+    {noreply, NewClient} ->
+      {noreply, NewClient};
 
-      Response = case GroupInfo of
-        % Group exists
-        {Group, Number, Low, High} ->
-          join(<<" ">>, [
-            <<"211">>,
-            integer_to_binary(Number),
-            integer_to_binary(Low),
-            integer_to_binary(High),
-            Group,
-            <<"Group successfully selected">>
-          ]);
-        % No group
-        false ->
-          <<"411 No such newsgroup">>
-        end,
-
-        Transport:send(Socket, <<Response/binary, "\r\n">>),
-      {Group, State2};
-    false ->
-      Transport:send(Socket, <<"411 No such newsgroup\r\n">>),
-      {SelectedGroup, State1}
-  end,
-
-  % Ready for the next command.
-  ok = Transport:setopts(Socket, [{active, once}]),
-
-  {noreply, Client#client{group = NewGroup, state = NewState}};
-
-% Client selects a newsgroup as the currently selected newsgroup and returns
-% summary information about it with 211 code, or 411 if not available.
-% It also provides a list of article numbers in the newsgroup.
-% If no group is specified and the currently selected newsgroup is invalid,
-% a 412 response MUST be returned.
-% @TODO: Handle `range` argument.
-handle_info({tcp, Socket, <<"LISTGROUP\r\n">>}, #client{group = invalid, transport = Transport} = Client) ->
-  Transport:send(Socket, <<"412 No newsgroup selected\r\n">>),
-  {noreply, Client};
-
-handle_info({tcp, Socket, <<"LISTGROUP\r\n">>}, #client{group = Group} = Client) ->
-  handle_info({tcp, Socket, <<"LISTGROUP ", Group/binary, "\r\n">>}, Client);
-
-handle_info({tcp, Socket, <<"LISTGROUP ", GroupCRLF/binary>>}, Client) ->
-  % Removes the CRLF pair.
-  Group = string:chomp(GroupCRLF),
-  #client{transport = Transport, module = Module, state = State} = Client,
-  % Asks the callback module to provide the capacitities at this moment.
-  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
-
-  NewState = case lists:member(<<"READER">>, Capabilities) of
-    true ->
-      {ok, GroupInfo, State2} = Module:handle_LISTGROUP(Group, State1),
-
-      Response = case GroupInfo of
-        % Group exists
-        {Group, Number, Low, High, ArticleNumbers} ->
-          GroupLine = join(<<" ">>, [
-            <<"211">>,
-            integer_to_binary(Number),
-            integer_to_binary(Low),
-            integer_to_binary(High),
-            Group,
-            <<"list follows">>
-          ]),
-
-          join(<<"\r\n">>, [
-            GroupLine,
-            lists:foldr(fun(ArticleNumber, AccIn) ->
-              ArticleNumberBinary = integer_to_binary(ArticleNumber),
-              <<ArticleNumberBinary/binary, "\r\n", AccIn/binary>>
-            end, <<".">>, ArticleNumbers)
-          ]);
-        % No group
-        false ->
-          <<"411 No such newsgroup">>
-        end,
-
-        Transport:send(Socket, <<Response/binary, "\r\n">>),
-      State2;
-    false ->
-      Transport:send(Socket, <<"411 No such newsgroup\r\n">>),
-      State1
-  end,
-
-  % Ready for the next command.
-  ok = Transport:setopts(Socket, [{active, once}]),
-
-  {noreply, Client#client{state = NewState}};
-
-% Client requests for an article by message ID.
-handle_info({tcp, Socket, <<"ARTICLE ", ArgCRLF/binary>>}, Client) ->
-  % Removes the CRLF pair.
-  Arg = string:chomp(ArgCRLF),
-  #client{transport = Transport, module = Module, state = State} = Client,
-  % Asks the callback module to provide the capacitities at this moment.
-  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
-
-  State2 = case lists:member(<<"READER">>, Capabilities) of
-    true ->
-      {ok, ArticleInfo, NewState} = Module:handle_ARTICLE(Arg, State1),
-
-      Response = case ArticleInfo of
-        % Article exists
-        {Number, {Id, Headers, Body}} ->
-
-          join(<<"\r\n">>, [
-            join(<<" ">>, [<<"220">>, integer_to_binary(Number), Id]),
-            maps:fold(fun(Header, Content, AccIn) ->
-              <<AccIn/binary, Header/binary, ": ", Content/binary, "\r\n">>
-            end, <<"">>, Headers),
-            Body,
-            <<".">>
-          ]);
-        % No article
-        false ->
-          <<"430 No article with that message-id">>
-        end,
-
-        Transport:send(Socket, <<Response/binary, "\r\n">>),
-      NewState;
-    false ->
-      Transport:send(Socket, <<"430 No article with that message-id\r\n">>),
-      State1
-  end,
-
-  % Ready for the next command.
-  ok = Transport:setopts(Socket, [{active, once}]),
-
-  {noreply, Client#client{state = State2}};
-
-% The client uses the QUIT command to terminate the session. The server
-% MUST acknowledge the QUIT command and then close the connection to
-% the client.
-handle_info({tcp, Socket, <<"QUIT\r\n">>}, #client{transport = Transport} = Client) ->
-  Transport:send(Socket, <<"205 Connection closing\r\n">>),
-  Transport:close(Socket),
-  {noreply, Client};
-
-handle_info({tcp, Socket, Line}, Client) ->
-  #client{transport = Transport, module = Module, state = State} = Client,
-  ok = Transport:setopts(Socket, [{active, once}]),
-
-  Command = string:trim(Line, trailing, "\r\n"),
-
-  NewState = case Module:handle_command(Command, State) of
-    {reply, Reply, State1} ->
-      Transport:send(Socket, <<Reply/binary, "\r\n">>),
-      State1;
-    {noreply, State1} ->
-      State1;
-    {stop, _Reason, State1} ->
+    {stop, Reason, Reply, NewClient} ->
+      Transport:send(Socket, [Reply, "\r\n"]),
       Transport:close(Socket),
-      State1;
-    {stop, _Reason, Reply, State1} ->
-      Transport:send(Socket, <<Reply/binary, "\r\n">>),
-      Transport:close(Socket),
-      State1
-  end,
+      {stop, Reason, NewClient}
+  end;
 
-  {noreply, Client#client{state = NewState}};
+% handle_info({tcp, Socket, <<"GROUP ", Group/binary, "\r\n">>}, Client) ->
+%   #client{transport = Transport, module = Module, state = State} = Client,
 
 handle_info({tcp_closed, _Socket}, Client) ->
   {stop, normal, Client};
@@ -487,19 +303,217 @@ code_change(_OldVsn, Client, _Extra) ->
   % ..code to convert state (and more) during code change
   {ok, Client}.
 
+%% ==================================================================
+%% Command Handlers
+%% ==================================================================
+
+% Client asks for server's capabilities. Responds with 101 code.
+% Follows with the capabilities returned from `handle_CAPABILITIES/1` callback.
+handle_command(<<"CAPABILITIES">>, Client) ->
+  #client{module = Module, state = State} = Client,
+  % Asks the callback module to provide the capacitities at this moment.
+  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
+
+  % Retrieve the VERSION capability from returned list if any.
+  Version = case lists:search(fun is_version/1, Capabilities) of
+    false -> <<"VERSION ", ?NNTP_VERSION/binary>>;
+    {value, Value} -> Value
+  end,
+
+  % Build multi-line data block responsefollowing the 101 response code.
+  Reply = [
+    join(<<"\r\n">>, [
+      <<"101 Capability list:">>, % Command response with code
+      Version % Then the version
+      | [
+        % And all the standard capabilities.
+        X || X <- Capabilities, is_capability(X)
+      ]
+    ]),
+    % Ends the multi-line data block with a termination line.
+    <<"\r\n.">>
+  ],
+
+  {reply, Reply, Client#client{state = State1}};
+
+% Client selects a newsgroup as the currently selected newsgroup and returns
+% summary information about it with 211 code, or 411 if not available.
+% When a valid group is selected by means of this command, the currently
+% selected newsgroup MUST be set to that group.
+handle_command(<<"GROUP ", Group/binary>> = Cmd, Client) ->
+  #client{
+    module = Module,
+    group = SelectedGroup, state = State
+  } = Client,
+
+  % Asks the callback module to provide the capacitities at this moment.
+  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
+
+  {Reply, NewGroup, NewState} = case is_capable(Cmd, Capabilities) of
+    true ->
+      {ok, GroupInfo, State2} = Module:handle_GROUP(Group, State1),
+
+      Response = case GroupInfo of
+        % Group exists
+        {Group, Number, Low, High} ->
+          join(<<" ">>, [
+            <<"211">>,
+            integer_to_binary(Number),
+            integer_to_binary(Low),
+            integer_to_binary(High),
+            Group,
+            <<"Group successfully selected">>
+          ]);
+        % No group
+        false ->
+          <<"411 No such newsgroup">>
+        end,
+
+      {Response, Group, State2};
+    false ->
+      {<<"411 No such newsgroup">>, SelectedGroup, State1}
+  end,
+
+  {reply, Reply, Client#client{group = NewGroup, state = NewState}};
+
+% Client selects a newsgroup as the currently selected newsgroup and returns
+% summary information about it with 211 code, or 411 if not available.
+% It also provides a list of article numbers in the newsgroup.
+% If no group is specified and the currently selected newsgroup is invalid,
+% a 412 response MUST be returned.
+% @TODO: Handle `range` argument.
+handle_command(<<"LISTGROUP">>, #client{group = invalid} = Client) ->
+  {reply, <<"412 No newsgroup selected">>, Client};
+
+handle_command(<<"LISTGROUP">>, #client{group = Group} = Client) ->
+  handle_command(<<"LISTGROUP ", Group/binary>>, Client);
+
+handle_command(<<"LISTGROUP ", Group/binary>> = Cmd, Client) ->
+  #client{module = Module, state = State} = Client,
+  % Asks the callback module to provide the capacitities at this moment.
+  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
+
+  {Reply, NewState} = case is_capable(Cmd, Capabilities) of
+    true ->
+      {ok, GroupInfo, State2} = Module:handle_LISTGROUP(Group, State1),
+
+      Response = case GroupInfo of
+        % Group exists
+        {Group, Number, Low, High, ArticleNumbers} ->
+          GroupLine = join(<<" ">>, [
+            <<"211">>,
+            integer_to_binary(Number),
+            integer_to_binary(Low),
+            integer_to_binary(High),
+            Group,
+            <<"list follows">>
+          ]),
+
+          join(<<"\r\n">>, [
+            GroupLine,
+            lists:foldr(fun(ArticleNumber, AccIn) ->
+              ArticleNumberBinary = integer_to_binary(ArticleNumber),
+              <<ArticleNumberBinary/binary, "\r\n", AccIn/binary>>
+            end, <<".">>, ArticleNumbers)
+          ]);
+        % No group
+        false ->
+          <<"411 No such newsgroup">>
+        end,
+
+      {Response, State2};
+    false ->
+      {<<"411 No such newsgroup">>, State1}
+  end,
+
+  {reply, Reply, Client#client{state = NewState}};
+
+% Client requests for an article by message ID.
+handle_command(<<"ARTICLE ", Arg/binary>> = Cmd, Client) ->
+  #client{module = Module, state = State} = Client,
+  % Asks the callback module to provide the capacitities at this moment.
+  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
+
+  {Reply, NewState} = case is_capable(Cmd, Capabilities) of
+    true ->
+      {ok, ArticleInfo, State2} = Module:handle_ARTICLE(Arg, State1),
+
+      Response = case ArticleInfo of
+        % Article exists
+        {Number, {Id, Headers, Body}} ->
+
+          join(<<"\r\n">>, [
+            join(<<" ">>, [<<"220">>, integer_to_binary(Number), Id]),
+            maps:fold(fun(Header, Content, AccIn) ->
+              <<AccIn/binary, Header/binary, ": ", Content/binary, "\r\n">>
+            end, <<"">>, Headers),
+            Body,
+            <<".">>
+          ]);
+        % No article
+        false ->
+          <<"430 No article with that message-id">>
+        end,
+
+      {Response, State2};
+    false ->
+      {<<"430 No article with that message-id">>, State1}
+  end,
+
+  {reply, Reply, Client#client{state = NewState}};
+
+% The client uses the QUIT command to terminate the session. The server
+% MUST acknowledge the QUIT command and then close the connection to
+% the client.
+handle_command(<<"QUIT">>, Client) ->
+  {stop, normal, <<"205 Connection closing">>, Client};
+
+% Any other commands.
+handle_command(Command, Client) ->
+  #client{module = Module, state = State} = Client,
+
+  case Module:handle_command(Command, State) of
+    {reply, Reply, State1} ->
+      {reply, Reply, Client#client{state = State1}};
+    {noreply, State1} ->
+      {noreply, Client#client{state = State1}};
+    {stop, Reason, State1} ->
+      {stop, Reason, Client#client{state = State1}};
+    {stop, Reason, Reply, State1} ->
+      {stop, Reason, Reply, Client#client{state = State1}}
+  end.
+
+%% ==================================================================
+%% Internal Funtions
+%% ==================================================================
+
 % Checks if a text match "VERSION" capability.
+%% @private
 is_version(<<"VERSION ", _N/binary>>) -> true;
 is_version(_) -> false.
 
 % VERSION is handled at server's level, so it's not a capability.
+%% @private
 is_capability(<<"VERSION ", _N/binary>>) ->
   false;
-
 % Checks if the capability is in the standard list.
 is_capability(Capability) ->
   lists:member(Capability, ?CAPABILITIES).
 
+% Check if a command or capability is within a capability list.
+%% @private
+is_capable(<<"GROUP", _Arg/binary>>, Capabilities) ->
+  is_capable(<<"READER">>, Capabilities);
+is_capable(<<"LISTGROUP", _Arg/binary>>, Capabilities) ->
+  is_capable(<<"READER">>, Capabilities);
+is_capable(<<"ARTICLE", _Arg/binary>>, Capabilities) ->
+  is_capable(<<"READER">>, Capabilities);
+
+is_capable(Capability, Capabilities) ->
+  lists:member(Capability, Capabilities).
+
 % Join binary
+%% @private
 join(_Separator, []) ->
     <<>>;
 join(Separator, [H|T]) ->
