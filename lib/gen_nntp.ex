@@ -69,6 +69,8 @@ defmodule GenNNTP do
     when number: non_neg_integer(),
         arg: :gen_nttp.message_id() | number
 
+  @callback handle_HELP(state) :: {:ok, help_text :: String.t(), state}
+
   @callback handle_command(command :: String.t(), state) ::
     {:reply, response :: any(), state} |
     {:noreply, state} |

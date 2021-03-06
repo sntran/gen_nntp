@@ -96,6 +96,8 @@
             when Number :: non_neg_integer(),
                  Arg :: message_id() | Number.
 
+-callback handle_HELP(state()) -> {ok, HelpText :: [binary()], state()}.
+
 -callback handle_command(Command :: binary(), state()) ->
             {reply, Response :: binary(), state()}
             | {noreply, state()}
@@ -471,6 +473,23 @@ handle_command(<<"ARTICLE ", Arg/binary>> = Cmd, Client) ->
       {<<"430 No article with that message-id">>, State1}
   end,
 
+  {reply, Reply, Client#client{state = NewState}};
+
+% This command provides a short summary of the commands that are
+% understood by this implementation of the server.  The help text will
+% be presented as a multi-line data block following the 100 response
+% code. This text is not guaranteed to be in any particular format (but must
+% be UTF-8) and MUST NOT be used by clients as a replacement for the
+% CAPABILITIES command
+handle_command(<<"HELP">>, Client) ->
+  #client{module = Module, state = State} = Client,
+  {ok, Help, NewState} = Module:handle_HELP(State),
+
+  Reply = [
+    <<"100 Help text follows\r\n">>,
+    Help, <<"\r\n">>,
+    <<".">>
+  ],
   {reply, Reply, Client#client{state = NewState}};
 
 % The client uses the QUIT command to terminate the session. The server

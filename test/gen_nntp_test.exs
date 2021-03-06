@@ -574,6 +574,66 @@ defmodule GenNNTPTest do
 
   end
 
+  describe "@callback handle_HELP/1" do
+    setup do
+      help_text = String.trim("""
+      This is some help text.  There is no specific\r
+      formatting requirement for this test, though\r
+      it is customary for it to list the valid commands\r
+      and give a brief definition of what they do.
+      """)
+
+      TestNNTPServer.start(
+        handle_HELP: fn(state) ->
+          Kernel.send(:tester, {:called_back, :handle_HELP, 1})
+
+          {:ok, help_text, state}
+        end
+      )
+
+      {:ok, socket, _greeting} = GenNNTP.connect()
+
+      %{socket: socket, help_text: help_text}
+    end
+
+    test "is called when the client asks for it", %{socket: socket} do
+      refute_receive(
+        {:called_back, :handle_HELP, 1},
+        100,
+        "@callback handle_HELP/1 should not be called when client has not asked for it"
+      )
+
+      :ok = :gen_tcp.send(socket, "HELP\r\n")
+
+      assert_receive(
+        {:called_back, :handle_HELP, 1},
+        100,
+        "@callback handle_HELP/1 was not called"
+      )
+    end
+
+    test "responds with `100` and a multi-line data block when the client asks for it", context do
+      %{socket: socket, help_text: help_text} = context
+
+      :ok = :gen_tcp.send(socket, "HELP\r\n")
+
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^100 /
+
+      # Help text line by line.
+      help_text
+      |> String.split("\r\n")
+      |> Enum.each(fn line ->
+        {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+        assert response === "#{line}\r\n"
+      end)
+
+      # Then the termination line
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response === ".\r\n"
+    end
+  end
+
   describe "command/3" do
 
     setup context do

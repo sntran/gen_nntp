@@ -93,6 +93,19 @@ defmodule TestNNTPServer do
   end
 
   @impl GenNNTP
+  def handle_HELP(client) do
+    state = client[:state]
+
+    case maybe_apply(client, :handle_HELP, [state], {:ok, "", state}) do
+      {:ok, help_text, state} ->
+        client = Keyword.put(client, :state, state)
+        {:ok, help_text, client}
+      other ->
+        other
+    end
+  end
+
+  @impl GenNNTP
   def handle_command(_command, state) do
     {:noreply, state}
   end
