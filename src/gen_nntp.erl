@@ -46,6 +46,8 @@
   module :: module(),
   % currently selected newsgroup
   group :: invalid | binary(),
+  % current article number
+  article_number :: invalid | non_neg_integer(),
   state :: state()
 }).
 
@@ -232,7 +234,9 @@ init({ Transport, { Module, Args, _Options } }) ->
     transport = Transport,
     module = Module,
     % At the start of an NNTP session, selected newsgroup is set to invalid.
-    group = invalid
+    group = invalid,
+    % At the start of an NNTP session, current article number is invalid.
+    article_number = invalid
   },
 
   case Module:init(Args) of
@@ -356,38 +360,48 @@ handle_command(<<"CAPABILITIES">>, Client) ->
 handle_command(<<"GROUP ", Group/binary>> = Cmd, Client) ->
   #client{
     module = Module,
-    group = SelectedGroup, state = State
+    article_number = CurrentArticleNumber,
+    group = SelectedGroup,
+    state = State
   } = Client,
 
   % Asks the callback module to provide the capacitities at this moment.
   {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
 
-  {Reply, NewGroup, NewState} = case is_capable(Cmd, Capabilities) of
+  {Reply, NewArticleNumber, NewGroup, NewState} = case is_capable(Cmd, Capabilities) of
     true ->
       {ok, GroupInfo, State2} = Module:handle_GROUP(Group, State1),
 
-      Response = case GroupInfo of
-        % Group exists
+      {ArticleNumber, Response} = case GroupInfo of
+        % An empty newsgroup is selected,
+        {Group, 0, 0, 0} ->
+          % The current article number is made invalid
+          {invalid, <<"211 0 0 0 ", Group/binary, " Group successfully selected">>};
+        % A valid group is selected
         {Group, Number, Low, High} ->
-          join(<<" ">>, [
+          {Low, join(<<" ">>, [
             <<"211">>,
             integer_to_binary(Number),
             integer_to_binary(Low),
             integer_to_binary(High),
             Group,
             <<"Group successfully selected">>
-          ]);
+          ])};
         % No group
         false ->
-          <<"411 No such newsgroup">>
+          {CurrentArticleNumber, <<"411 No such newsgroup">>}
         end,
 
-      {Response, Group, State2};
+      {Response, ArticleNumber, Group, State2};
     false ->
-      {<<"411 No such newsgroup">>, SelectedGroup, State1}
+      {<<"411 No such newsgroup">>, CurrentArticleNumber, SelectedGroup, State1}
   end,
 
-  {reply, Reply, Client#client{group = NewGroup, state = NewState}};
+  {reply, Reply, Client#client{
+    article_number = NewArticleNumber,
+    group = NewGroup,
+    state = NewState
+  }};
 
 % Client selects a newsgroup as the currently selected newsgroup and returns
 % summary information about it with 211 code, or 411 if not available.
@@ -441,34 +455,63 @@ handle_command(<<"LISTGROUP ", Group/binary>> = Cmd, Client) ->
 
   {reply, Reply, Client#client{state = NewState}};
 
-% Client requests for an article by message ID.
+% The currently selected group is invalid, and no argument is specified.
+handle_command(<<"ARTICLE">>, #client{group = invalid} = Client) ->
+  {reply, <<"412 No newsgroup selected">>, Client};
+
+% Have currently selected group, but current article number is invalid.
+handle_command(<<"ARTICLE">>, #client{article_number = invalid} = Client) ->
+  {reply, <<"420 Current article number is invalid">>, Client};
+
+handle_command(<<"ARTICLE">>, #client{article_number = ArticleNumber} = Client) ->
+  % @FIXME: Double conversion.
+  ArticleNumberBinary = integer_to_binary(ArticleNumber),
+  handle_command(<<"ARTICLE ", ArticleNumberBinary/binary>>, Client);
+
+% Client requests for an article by message ID or article number.
 handle_command(<<"ARTICLE ", Arg/binary>> = Cmd, Client) ->
-  #client{module = Module, state = State} = Client,
+  #client{module = Module, group = CurrentGroup, state = State} = Client,
   % Asks the callback module to provide the capacitities at this moment.
   {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
 
   {Reply, NewState} = case is_capable(Cmd, Capabilities) of
     true ->
-      {ok, ArticleInfo, State2} = Module:handle_ARTICLE(Arg, State1),
+      % Checks if the argument is a number or a message ID.
+      try {CurrentGroup, binary_to_integer(Arg)} of
+        % Argument is a number, but current group is invalid, responds with
+        {invalid, _ArticleNumber} ->
+          {<<"412 No newsgroup selected">>, State1};
+        % Argument is a number, and current group is valid, ask the callback for article.
+        {_, ArticleNumber} ->
+          {ok, ArticleInfo, State2} = Module:handle_ARTICLE({ArticleNumber, CurrentGroup}, State1),
+          case ArticleInfo of
+            false -> {<<"423 No article with that number">>, State2};
 
-      Response = case ArticleInfo of
-        % Article exists
-        {Number, {Id, Headers, Body}} ->
+            % Article specified by article number exists
+            {Number, {Id, Headers, Body}} ->
+              Response = join(<<"\r\n">>, [
+                join(<<" ">>, [<<"220">>, integer_to_binary(Number), Id]),
+                article(Headers, Body),
+                <<".">>
+              ]),
+              {Response, State2}
+          end
+      catch
+        error:badarg ->
+          {ok, ArticleInfo, State2} = Module:handle_ARTICLE(Arg, State1),
+          case ArticleInfo of
+            false -> {<<"430 No article with that message-id">>, State2};
 
-          join(<<"\r\n">>, [
-            join(<<" ">>, [<<"220">>, integer_to_binary(Number), Id]),
-            maps:fold(fun(Header, Content, AccIn) ->
-              <<AccIn/binary, Header/binary, ": ", Content/binary, "\r\n">>
-            end, <<"">>, Headers),
-            Body,
-            <<".">>
-          ]);
-        % No article
-        false ->
-          <<"430 No article with that message-id">>
-        end,
-
-      {Response, State2};
+            % Article specified by message ID exists
+            {Number, {Id, Headers, Body}} ->
+              Response = join(<<"\r\n">>, [
+                join(<<" ">>, [<<"220">>, integer_to_binary(Number), Id]),
+                article(Headers, Body),
+                <<".">>
+              ]),
+              {Response, State2}
+          end
+      end;
     false ->
       {<<"430 No article with that message-id">>, State1}
   end,
@@ -566,3 +609,11 @@ join(_Separator, []) ->
     <<>>;
 join(Separator, [H|T]) ->
     lists:foldl(fun (Value, Acc) -> <<Acc/binary, Separator/binary, Value/binary>> end, H, T).
+
+article(Headers, Body) ->
+  join(<<"\r\n">>, [
+    maps:fold(fun(Header, Content, AccIn) ->
+      <<AccIn/binary, Header/binary, ": ", Content/binary, "\r\n">>
+    end, <<"">>, Headers),
+    Body
+  ]).
