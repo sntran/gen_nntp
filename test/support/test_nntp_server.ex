@@ -93,6 +93,45 @@ defmodule TestNNTPServer do
   end
 
   @impl GenNNTP
+  def handle_HEAD(arg, client) do
+    state = client[:state]
+
+    case maybe_apply(client, :handle_HEAD, [arg, state], {:ok, {0, {arg, %{}, ""}}, state}) do
+      {:ok, article_info, state} ->
+        client = Keyword.put(client, :state, state)
+        {:ok, article_info, client}
+      other ->
+        other
+    end
+  end
+
+  @impl GenNNTP
+  def handle_BODY(arg, client) do
+    state = client[:state]
+
+    case maybe_apply(client, :handle_BODY, [arg, state], {:ok, {0, {arg, %{}, ""}}, state}) do
+      {:ok, article_info, state} ->
+        client = Keyword.put(client, :state, state)
+        {:ok, article_info, client}
+      other ->
+        other
+    end
+  end
+
+  @impl GenNNTP
+  def handle_STAT(arg, client) do
+    state = client[:state]
+
+    case maybe_apply(client, :handle_STAT, [arg, state], {:ok, {0, {arg, %{}, ""}}, state}) do
+      {:ok, article_info, state} ->
+        client = Keyword.put(client, :state, state)
+        {:ok, article_info, client}
+      other ->
+        other
+    end
+  end
+
+  @impl GenNNTP
   def handle_HELP(client) do
     state = client[:state]
 

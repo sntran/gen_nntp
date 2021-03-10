@@ -63,7 +63,28 @@ defmodule GenNNTP do
     when group: String.t()
 
   @callback handle_ARTICLE(arg, state) ::
-    {:ok, { number, :gen_nttp.article()}, state }|
+    {:ok, { number, :gen_nttp.article() }, state }|
+    {:ok, false, state} |
+    {:error, reason :: String.t(), state}
+    when number: non_neg_integer(),
+        arg: :gen_nttp.message_id() | number
+
+  @callback handle_HEAD(arg, state) ::
+    {:ok, { number, :gen_nttp.article() }, state }|
+    {:ok, false, state} |
+    {:error, reason :: String.t(), state}
+    when number: non_neg_integer(),
+        arg: :gen_nttp.message_id() | number
+
+  @callback handle_BODY(arg, state) ::
+    {:ok, { number, :gen_nttp.article() }, state }|
+    {:ok, false, state} |
+    {:error, reason :: String.t(), state}
+    when number: non_neg_integer(),
+        arg: :gen_nttp.message_id() | number
+
+  @callback handle_STAT(arg, state) ::
+    {:ok, { number, :gen_nttp.article() }, state }|
     {:ok, false, state} |
     {:error, reason :: String.t(), state}
     when number: non_neg_integer(),

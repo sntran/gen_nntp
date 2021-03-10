@@ -6,8 +6,10 @@
 -type address() :: inet:socket_address() | inet:hostname() | binary().
 -type port_number() :: inet:port_number().
 -type message_id() :: binary().
--type article() :: {
-  message_id(),
-  Headers :: map(),
-  Body :: binary()
+-type headers() :: map().
+-type body() :: binary().
+-type article() :: #{
+  id := message_id(),
+  headers => headers(),
+  body => body()
 }.
