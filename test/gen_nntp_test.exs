@@ -218,18 +218,12 @@ defmodule GenNNTPTest do
   end
 
   describe "@callback handle_GROUP/2" do
+    setup [:setup_groups]
 
     setup context do
       # Default to have "READER" capability for "GROUP" to work.
       capabilities = context[:capabilities] || ["READER"]
-      groups = context[:groups] || [
-        {
-          "misc.test",
-          0, # Estimated number of articles in the group
-          0, # Article number of the first article in the group
-          0 # Article number of the last article in the group
-        }
-      ]
+      groups = context[:groups]
 
       TestNNTPServer.start(
         handle_CAPABILITIES: fn(state) ->
@@ -238,7 +232,11 @@ defmodule GenNNTPTest do
         handle_GROUP: fn(group, state) ->
           Kernel.send(:tester, {:called_back, :handle_GROUP, 2})
 
-          {:ok, List.keyfind(groups, group, 0, false), state}
+          case List.keyfind(groups, group, 0, false) do
+            false -> {:ok, false, state}
+            # Removes the group's article numbers.
+            group -> {:ok, Tuple.delete_at(group, 4), state}
+          end
         end
       )
 
@@ -270,10 +268,14 @@ defmodule GenNNTPTest do
     end
 
     @tag skip_command: true
-    test "responds with `211 number low high group` when the client asks for it", %{socket: socket} do
-      :ok = :gen_tcp.send(socket, "GROUP misc.test\r\n")
+    test "responds with `211 number low high group` when the client asks for it", context do
+      %{socket: socket, groups: groups} = context
+
+      group_name = "misc.test"
+      {^group_name, number, low, high, _} = List.keyfind(groups, group_name, 0, false)
+      :ok = :gen_tcp.send(socket, "GROUP #{group_name}\r\n")
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
-      assert response =~ ~r/^211 0 0 0 misc\.test/
+      assert response =~ ~r/^211 #{number} #{low} #{high} #{group_name}/
     end
 
     # The setup sets a list of capabilities with "READER" by default, so we empty it here.
@@ -306,32 +308,12 @@ defmodule GenNNTPTest do
   end
 
   describe "@callback handle_LISTGROUP/2" do
+    setup [:setup_groups]
 
     setup context do
       # Default to have "READER" capability for "LISTGROUP" to work.
       capabilities = context[:capabilities] || ["READER"]
-      groups = context[:groups] || [
-        {
-          "example.empty.newsgroup",
-          0, # Estimated number of articles in the group
-          0, # Article number of the first article in the group
-          0, # Article number of the last article in the group
-          [],
-        },
-        {
-          "misc.test",
-          2000, # Estimated number of articles in the group
-          3000234, # Article number of the first article in the group
-          3002322, # Article number of the last article in the group
-          [
-            3000234,
-            3000237,
-            3000238,
-            3000239,
-            3002322,
-          ],
-        }
-      ]
+      groups = context[:groups]
 
       TestNNTPServer.start(
         handle_CAPABILITIES: fn(state) ->
@@ -472,7 +454,11 @@ defmodule GenNNTPTest do
           {:ok, capabilities, state}
         end,
         handle_GROUP: fn(group, state) ->
-          {:ok, List.keyfind(groups, group, 0, false), state}
+          case List.keyfind(groups, group, 0, false) do
+            false -> {:ok, false, state}
+            # Removes the group's article numbers.
+            group -> {:ok, Tuple.delete_at(group, 4), state}
+          end
         end,
         handle_ARTICLE: fn
           # Requests article by message_id.
@@ -688,7 +674,7 @@ defmodule GenNNTPTest do
       %{socket: socket, groups: groups, group_articles: group_articles} = context
 
       group_name = "misc.test"
-      {^group_name, _number, low, _high} = List.keyfind(groups, group_name, 0, false)
+      {^group_name, _number, low, _high, _} = List.keyfind(groups, group_name, 0, false)
 
       # Calling "GROUP" should set the current article number to the first article in the group
       :ok = :gen_tcp.send(socket, "GROUP #{group_name}\r\n")
@@ -708,7 +694,7 @@ defmodule GenNNTPTest do
 
       # This is the case where currently selected newsgroup is valid, but it's empty.
       group_name = "example.empty.newsgroup"
-      {^group_name, 0, 0, 0} = List.keyfind(groups, group_name, 0, false)
+      {^group_name, 0, 0, 0, _} = List.keyfind(groups, group_name, 0, false)
 
       # Calling "GROUP" should set the current article number to the first article in the group
       :ok = :gen_tcp.send(socket, "GROUP #{group_name}\r\n")
@@ -746,7 +732,11 @@ defmodule GenNNTPTest do
           {:ok, capabilities, state}
         end,
         handle_GROUP: fn(group, state) ->
-          {:ok, List.keyfind(groups, group, 0, false), state}
+          case List.keyfind(groups, group, 0, false) do
+            false -> {:ok, false, state}
+            # Removes the group's article numbers.
+            group -> {:ok, Tuple.delete_at(group, 4), state}
+          end
         end,
         handle_HEAD: fn
           # Requests article by message_id.
@@ -828,7 +818,11 @@ defmodule GenNNTPTest do
           {:ok, capabilities, state}
         end,
         handle_GROUP: fn(group, state) ->
-          {:ok, List.keyfind(groups, group, 0, false), state}
+          case List.keyfind(groups, group, 0, false) do
+            false -> {:ok, false, state}
+            # Removes the group's article numbers.
+            group -> {:ok, Tuple.delete_at(group, 4), state}
+          end
         end,
         handle_BODY: fn
           # Requests article by message_id.
@@ -883,7 +877,6 @@ defmodule GenNNTPTest do
 
   end
 
-  # @TODO
   describe "@acllback handle_STAT/2" do
 
     setup [:setup_articles, :setup_groups, :setup_group_articles]
@@ -910,7 +903,11 @@ defmodule GenNNTPTest do
           {:ok, capabilities, state}
         end,
         handle_GROUP: fn(group, state) ->
-          {:ok, List.keyfind(groups, group, 0, false), state}
+          case List.keyfind(groups, group, 0, false) do
+            false -> {:ok, false, state}
+            # Removes the group's article numbers.
+            group -> {:ok, Tuple.delete_at(group, 4), state}
+          end
         end,
         handle_STAT: fn
           # Requests article by message_id.
@@ -1115,12 +1112,20 @@ defmodule GenNNTPTest do
           0, # Estimated number of articles in the group
           0, # Article number of the first article in the group
           0, # Article number of the last article in the group
+          [],
         },
         {
           "misc.test",
           2000, # Estimated number of articles in the group
           3000234, # Article number of the first article in the group
           3002322, # Article number of the last article in the group
+          [
+            3000234,
+            3000237,
+            3000238,
+            3000239,
+            3002322,
+          ],
         }
       ]
     ]
