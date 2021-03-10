@@ -67,28 +67,28 @@ defmodule GenNNTP do
     {:ok, false, state} |
     {:error, reason :: String.t(), state}
     when number: non_neg_integer(),
-        arg: :gen_nttp.message_id() | number
+        arg: :gen_nttp.message_id() | {number, group :: String.t()}
 
   @callback handle_HEAD(arg, state) ::
     {:ok, { number, :gen_nttp.article() }, state }|
     {:ok, false, state} |
     {:error, reason :: String.t(), state}
     when number: non_neg_integer(),
-        arg: :gen_nttp.message_id() | number
+        arg: :gen_nttp.message_id() | {number, group :: String.t()}
 
   @callback handle_BODY(arg, state) ::
     {:ok, { number, :gen_nttp.article() }, state }|
     {:ok, false, state} |
     {:error, reason :: String.t(), state}
     when number: non_neg_integer(),
-        arg: :gen_nttp.message_id() | number
+        arg: :gen_nttp.message_id() | {number, group :: String.t()}
 
   @callback handle_STAT(arg, state) ::
     {:ok, { number, :gen_nttp.article() }, state }|
     {:ok, false, state} |
     {:error, reason :: String.t(), state}
     when number: non_neg_integer(),
-        arg: :gen_nttp.message_id() | number
+        arg: :gen_nttp.message_id() | {number, group :: String.t()}
 
   @callback handle_HELP(state) :: {:ok, help_text :: String.t(), state}
 
@@ -101,6 +101,9 @@ defmodule GenNNTP do
   @optional_callbacks [
     handle_GROUP: 2,
     handle_LISTGROUP: 2,
-    handle_ARTICLE: 2
+    handle_ARTICLE: 2,
+    handle_HEAD: 2,
+    handle_BODY: 2,
+    handle_STAT: 2
   ]
 end

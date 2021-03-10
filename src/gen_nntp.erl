@@ -96,28 +96,28 @@
             | {ok, false, state()}
             | {error, Reason :: binary(), state()}
             when Number :: non_neg_integer(),
-                 Arg :: message_id() | Number.
+                 Arg :: message_id() | {Number, Group :: binary()}.
 
 -callback handle_HEAD(Arg, state()) ->
             {ok, { Number, article() }, state()}
             | {ok, false, state()}
             | {error, Reason :: binary(), state()}
             when Number :: non_neg_integer(),
-                 Arg :: message_id() | Number.
+                 Arg :: message_id() | {Number, Group :: binary()}.
 
 -callback handle_BODY(Arg, state()) ->
             {ok, { Number, article() }, state()}
             | {ok, false, state()}
             | {error, Reason :: binary(), state()}
             when Number :: non_neg_integer(),
-                 Arg :: message_id() | Number.
+                 Arg :: message_id() | {Number, Group :: binary()}.
 
 -callback handle_STAT(Arg, state()) ->
             {ok, { Number, article() }, state()}
             | {ok, false, state()}
             | {error, Reason :: binary(), state()}
             when Number :: non_neg_integer(),
-                 Arg :: message_id() | Number.
+                 Arg :: message_id() | {Number, Group :: binary()}.
 
 -callback handle_HELP(state()) -> {ok, HelpText :: [binary()], state()}.
 
@@ -130,7 +130,10 @@
 -optional_callbacks([
   handle_GROUP/2,
   handle_LISTGROUP/2,
-  handle_ARTICLE/2
+  handle_ARTICLE/2,
+  handle_HEAD/2,
+  handle_BODY/2,
+  handle_STAT/2
 ]).
 
 %% ==================================================================
