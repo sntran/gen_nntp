@@ -106,24 +106,20 @@ defmodule GenNNTPTest do
 
   describe "@callback handle_CAPABILITIES/1" do
 
+    setup [
+      :setup_CAPABILITIES,
+      :setup_server, :setup_socket
+    ]
+
     setup context do
-      capabilities = context[:capabilities] || []
-
-      TestNNTPServer.start(
-        handle_CAPABILITIES: fn(state) ->
-          Kernel.send(:tester, {:called_back, :handle_CAPABILITIES, 1})
-          {:ok, capabilities, state}
-        end
-      )
-
-      {:ok, socket, _greeting} = GenNNTP.connect()
+      socket = context[:socket]
 
       unless context[:skip_command] do
         :ok = :gen_tcp.send(socket, "CAPABILITIES\r\n")
         {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
       end
 
-      %{socket: socket}
+      :ok
     end
 
     @tag skip_command: true
@@ -218,36 +214,24 @@ defmodule GenNNTPTest do
   end
 
   describe "@callback handle_GROUP/2" do
-    setup [:setup_groups]
+    # Default to have "READER" capability for "GROUP" to work.
+    @describetag capabilities: ["READER"]
+
+    setup [
+      :setup_groups,
+      :setup_CAPABILITIES, :setup_GROUP,
+      :setup_server, :setup_socket
+    ]
 
     setup context do
-      # Default to have "READER" capability for "GROUP" to work.
-      capabilities = context[:capabilities] || ["READER"]
-      groups = context[:groups]
-
-      TestNNTPServer.start(
-        handle_CAPABILITIES: fn(state) ->
-          {:ok, capabilities, state}
-        end,
-        handle_GROUP: fn(group, state) ->
-          Kernel.send(:tester, {:called_back, :handle_GROUP, 2})
-
-          case List.keyfind(groups, group, 0, false) do
-            false -> {:ok, false, state}
-            # Removes the group's article numbers.
-            group -> {:ok, Tuple.delete_at(group, 4), state}
-          end
-        end
-      )
-
-      {:ok, socket, _greeting} = GenNNTP.connect()
+      socket = context[:socket]
 
       unless context[:skip_command] do
         :ok = :gen_tcp.send(socket, "GROUP misc.test\r\n")
         {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
       end
 
-      %{socket: socket}
+      :ok
     end
 
     @tag skip_command: true
@@ -308,28 +292,14 @@ defmodule GenNNTPTest do
   end
 
   describe "@callback handle_LISTGROUP/2" do
-    setup [:setup_groups]
+    # Default to have "READER" capability for "LISTGROUP" to work.
+    @describetag capabilities: ["READER"]
 
-    setup context do
-      # Default to have "READER" capability for "LISTGROUP" to work.
-      capabilities = context[:capabilities] || ["READER"]
-      groups = context[:groups]
-
-      TestNNTPServer.start(
-        handle_CAPABILITIES: fn(state) ->
-          {:ok, capabilities, state}
-        end,
-        handle_LISTGROUP: fn(group, state) ->
-          Kernel.send(:tester, {:called_back, :handle_LISTGROUP, 2})
-
-          {:ok, List.keyfind(groups, group, 0, false), state}
-        end
-      )
-
-      {:ok, socket, _greeting} = GenNNTP.connect()
-
-      %{socket: socket, groups: groups}
-    end
+    setup [
+      :setup_groups,
+      :setup_CAPABILITIES, :setup_LISTGROUP,
+      :setup_server, :setup_socket
+    ]
 
     test "is called when the client asks for it", %{socket: socket} do
       refute_receive(
@@ -430,64 +400,14 @@ defmodule GenNNTPTest do
   end
 
   describe "@callback handle_ARTICLE/2" do
+    # Default to have "READER" capability for "ARTICLE" to work.
+    @describetag capabilities: ["READER"]
 
-    setup [:setup_articles, :setup_groups, :setup_group_articles]
-
-    setup context do
-      # Default to have "READER" capability for "ARTICLE" to work.
-      capabilities = context[:capabilities] || ["READER"]
-
-      articles = context[:articles]
-      groups = context[:groups]
-      group_articles = context[:group_articles]
-
-      # Little helper
-      get_article = fn(message_id, article_number) ->
-        case Enum.find(articles, false, &(match(&1, message_id))) do
-          false -> false
-          article -> {article_number, article}
-        end
-      end
-
-      TestNNTPServer.start(
-        handle_CAPABILITIES: fn(state) ->
-          {:ok, capabilities, state}
-        end,
-        handle_GROUP: fn(group, state) ->
-          case List.keyfind(groups, group, 0, false) do
-            false -> {:ok, false, state}
-            # Removes the group's article numbers.
-            group -> {:ok, Tuple.delete_at(group, 4), state}
-          end
-        end,
-        handle_ARTICLE: fn
-          # Requests article by message_id.
-          (message_id, state) when is_binary(message_id) ->
-            Kernel.send(:tester, {:called_back, :handle_ARTICLE, message_id})
-            {:ok, get_article.(message_id, 0), state}
-
-          # Requests article by article number
-          ({article_number, group}, state) when is_integer(article_number) ->
-            Kernel.send(:tester, {:called_back, :handle_ARTICLE, article_number})
-
-            case List.keyfind(group_articles, {article_number, group}, 0, false) do
-              false ->
-                {:ok, false, state}
-              {_, message_id} ->
-                {:ok, get_article.(message_id, article_number), state}
-            end
-        end
-      )
-
-      {:ok, socket, _greeting} = GenNNTP.connect()
-
-      %{
-        socket: socket,
-        groups: groups,
-        articles: articles,
-        group_articles: group_articles
-      }
-    end
+    setup [
+      :setup_articles, :setup_groups, :setup_group_articles,
+      :setup_CAPABILITIES, :setup_GROUP, :setup_ARTICLE,
+      :setup_server, :setup_socket
+    ]
 
     test "is called when the client asks for it", %{socket: socket} do
       message_id = "<45223423@example.com>"
@@ -517,7 +437,7 @@ defmodule GenNNTPTest do
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
       assert response === "220 0 #{message_id}\r\n"
 
-      %{headers: headers, body: body} = Enum.find(articles, &(match(&1, message_id)))
+      %{headers: headers, body: body} = Enum.find(articles, &(match_id(&1, message_id)))
 
       # Headers, one per line.
       Enum.each(headers, fn({header, content}) ->
@@ -624,7 +544,7 @@ defmodule GenNNTPTest do
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
       assert response === "220 #{article_number} #{message_id}\r\n"
 
-      %{headers: headers, body: body} = Enum.find(articles, &(match(&1, message_id)))
+      %{headers: headers, body: body} = Enum.find(articles, &(match_id(&1, message_id)))
 
       # Headers, one per line.
       Enum.each(headers, fn({header, content}) ->
@@ -708,64 +628,14 @@ defmodule GenNNTPTest do
   end
 
   describe "@callback handle_HEAD/2" do
-    setup [:setup_articles, :setup_groups, :setup_group_articles]
+    # Default to have "READER" capability for "HEAD" to work.
+    @describetag capabilities: ["READER"]
 
-    setup context do
-      # Default to have "READER" capability for "HEAD" to work.
-      capabilities = context[:capabilities] || ["READER"]
-
-      articles = context[:articles]
-      groups = context[:groups]
-      group_articles = context[:group_articles]
-
-      # Little helper
-      get_article = fn(message_id, article_number) ->
-        case Enum.find(articles, false, &(match(&1, message_id))) do
-          false -> false
-          # Returns with the article map without the body.
-          article -> {article_number,  Map.delete(article, :body)}
-        end
-      end
-
-      TestNNTPServer.start(
-        handle_CAPABILITIES: fn(state) ->
-          {:ok, capabilities, state}
-        end,
-        handle_GROUP: fn(group, state) ->
-          case List.keyfind(groups, group, 0, false) do
-            false -> {:ok, false, state}
-            # Removes the group's article numbers.
-            group -> {:ok, Tuple.delete_at(group, 4), state}
-          end
-        end,
-        handle_HEAD: fn
-          # Requests article by message_id.
-          (message_id, state) when is_binary(message_id) ->
-            Kernel.send(:tester, {:called_back, :handle_HEAD, message_id})
-            {:ok, get_article.(message_id, 0), state}
-
-          # Requests article by article number
-          ({article_number, group}, state) when is_integer(article_number) ->
-            Kernel.send(:tester, {:called_back, :handle_HEAD, article_number})
-
-            case List.keyfind(group_articles, {article_number, group}, 0, false) do
-              false ->
-                {:ok, false, state}
-              {_, message_id} ->
-                {:ok, get_article.(message_id, article_number), state}
-            end
-        end
-      )
-
-      {:ok, socket, _greeting} = GenNNTP.connect()
-
-      %{
-        socket: socket,
-        groups: groups,
-        articles: articles,
-        group_articles: group_articles
-      }
-    end
+    setup [
+      :setup_articles, :setup_groups, :setup_group_articles,
+      :setup_CAPABILITIES, :setup_GROUP, :setup_HEAD,
+      :setup_server, :setup_socket
+    ]
 
     test "responds with `221 number message_id article`", context do
       %{socket: socket, articles: articles} = context
@@ -777,7 +647,7 @@ defmodule GenNNTPTest do
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
       assert response === "221 0 #{message_id}\r\n"
 
-      %{headers: headers} = Enum.find(articles, &(match(&1, message_id)))
+      %{headers: headers} = Enum.find(articles, &(match_id(&1, message_id)))
 
       # Headers, one per line.
       Enum.each(headers, fn({header, content}) ->
@@ -794,64 +664,14 @@ defmodule GenNNTPTest do
   end
 
   describe "@acllback handle_BODY/2" do
-    setup [:setup_articles, :setup_groups, :setup_group_articles]
+    # Default to have "READER" capability for "BODY" to work.
+    @describetag capabilities: ["READER"]
 
-    setup context do
-      # Default to have "READER" capability for "BODY" to work.
-      capabilities = context[:capabilities] || ["READER"]
-
-      articles = context[:articles]
-      groups = context[:groups]
-      group_articles = context[:group_articles]
-
-      # Little helper
-      get_article = fn(message_id, article_number) ->
-        case Enum.find(articles, false, &(match(&1, message_id))) do
-          false -> false
-          # Returns with the article map without the headers.
-          article -> {article_number,  Map.delete(article, :headers)}
-        end
-      end
-
-      TestNNTPServer.start(
-        handle_CAPABILITIES: fn(state) ->
-          {:ok, capabilities, state}
-        end,
-        handle_GROUP: fn(group, state) ->
-          case List.keyfind(groups, group, 0, false) do
-            false -> {:ok, false, state}
-            # Removes the group's article numbers.
-            group -> {:ok, Tuple.delete_at(group, 4), state}
-          end
-        end,
-        handle_BODY: fn
-          # Requests article by message_id.
-          (message_id, state) when is_binary(message_id) ->
-            Kernel.send(:tester, {:called_back, :handle_BODY, message_id})
-            {:ok, get_article.(message_id, 0), state}
-
-          # Requests article by article number
-          ({article_number, group}, state) when is_integer(article_number) ->
-            Kernel.send(:tester, {:called_back, :handle_BODY, article_number})
-
-            case List.keyfind(group_articles, {article_number, group}, 0, false) do
-              false ->
-                {:ok, false, state}
-              {_, message_id} ->
-                {:ok, get_article.(message_id, article_number), state}
-            end
-        end
-      )
-
-      {:ok, socket, _greeting} = GenNNTP.connect()
-
-      %{
-        socket: socket,
-        groups: groups,
-        articles: articles,
-        group_articles: group_articles
-      }
-    end
+    setup [
+      :setup_articles, :setup_groups, :setup_group_articles,
+      :setup_CAPABILITIES, :setup_GROUP, :setup_BODY,
+      :setup_server, :setup_socket
+    ]
 
     test "responds with `222 number message_id article`", context do
       %{socket: socket, articles: articles} = context
@@ -863,7 +683,7 @@ defmodule GenNNTPTest do
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
       assert response === "222 0 #{message_id}\r\n"
 
-      %{body: body} = Enum.find(articles, &(match(&1, message_id)))
+      %{body: body} = Enum.find(articles, &(match_id(&1, message_id)))
 
       # Then the body
       {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
@@ -878,65 +698,14 @@ defmodule GenNNTPTest do
   end
 
   describe "@acllback handle_STAT/2" do
+    # Default to have "READER" capability for "STAT" to work.
+    @describetag capabilities: ["READER"]
 
-    setup [:setup_articles, :setup_groups, :setup_group_articles]
-
-    setup context do
-      # Default to have "READER" capability for "STAT" to work.
-      capabilities = context[:capabilities] || ["READER"]
-
-      articles = context[:articles]
-      groups = context[:groups]
-      group_articles = context[:group_articles]
-
-      # Little helper
-      get_article = fn(message_id, article_number) ->
-        case Enum.find(articles, false, &(match(&1, message_id))) do
-          false -> false
-          # Returns with the article map without the headers and body.
-          article -> {article_number,  Map.drop(article, [:headers, :body])}
-        end
-      end
-
-      TestNNTPServer.start(
-        handle_CAPABILITIES: fn(state) ->
-          {:ok, capabilities, state}
-        end,
-        handle_GROUP: fn(group, state) ->
-          case List.keyfind(groups, group, 0, false) do
-            false -> {:ok, false, state}
-            # Removes the group's article numbers.
-            group -> {:ok, Tuple.delete_at(group, 4), state}
-          end
-        end,
-        handle_STAT: fn
-          # Requests article by message_id.
-          (message_id, state) when is_binary(message_id) ->
-            Kernel.send(:tester, {:called_back, :handle_STAT, message_id})
-            {:ok, get_article.(message_id, 0), state}
-
-          # Requests article by article number
-          ({article_number, group}, state) when is_integer(article_number) ->
-            Kernel.send(:tester, {:called_back, :handle_STAT, article_number})
-
-            case List.keyfind(group_articles, {article_number, group}, 0, false) do
-              false ->
-                {:ok, false, state}
-              {_, message_id} ->
-                {:ok, get_article.(message_id, article_number), state}
-            end
-        end
-      )
-
-      {:ok, socket, _greeting} = GenNNTP.connect()
-
-      %{
-        socket: socket,
-        groups: groups,
-        articles: articles,
-        group_articles: group_articles
-      }
-    end
+    setup [
+      :setup_articles, :setup_groups, :setup_group_articles,
+      :setup_CAPABILITIES, :setup_GROUP, :setup_STAT,
+      :setup_server, :setup_socket
+    ]
 
     test "responds with `223 number message_id article`", context do
       %{socket: socket} = context
@@ -1070,79 +839,5 @@ defmodule GenNNTPTest do
     end
 
   end
-
-  # Test data
-
-  defp setup_articles(context) do
-    [articles: context[:articles] || [
-        %{
-          id: "<45223423@example.com>",
-          headers: %{
-            "Path" => "pathost!demo!whitehouse!not-for-mail",
-            "From" => "'Demo User' <nobody@example.net>",
-            "Newsgroups" => "misc.test",
-            "Subject" => "I am just a test article",
-            "Date" => "6 Oct 1998 04:38:40 -0500",
-            "Organization" => "An Example Net, Uncertain, Texas",
-            "Message-ID" => "<45223423@example.com>"
-          },
-          body: "This is just a test article."
-        },
-        %{
-          id: "<4320003@example.com>",
-          headers: %{
-            "Path" => "pathost!demo!whitehouse!not-for-mail",
-            "From" => "'Demo User' <nobody@example.net>",
-            "Newsgroups" => "misc.test",
-            "Subject" => "I am just a test article",
-            "Date" => "6 Oct 1998 04:38:40 -0500",
-            "Organization" => "An Example Net, Uncertain, Texas",
-            "Message-ID" => "<4320003@example.com>"
-          },
-          body: "This is just a test article."
-        }
-      ]
-    ]
-  end
-
-  defp setup_groups(context) do
-    [groups: context[:groups] || [
-        {
-          "example.empty.newsgroup",
-          0, # Estimated number of articles in the group
-          0, # Article number of the first article in the group
-          0, # Article number of the last article in the group
-          [],
-        },
-        {
-          "misc.test",
-          2000, # Estimated number of articles in the group
-          3000234, # Article number of the first article in the group
-          3002322, # Article number of the last article in the group
-          [
-            3000234,
-            3000237,
-            3000238,
-            3000239,
-            3002322,
-          ],
-        }
-      ]
-    ]
-  end
-
-  defp setup_group_articles(context) do
-    [group_articles: context[:group_articles] || [
-        {{3000234, "misc.test"}, "<4320003@example.com>"},
-        {{3000237, "misc.test"}, "<7320003@example.com>"},
-        {{3000238, "misc.test"}, "<8320003@example.com>"},
-        {{3000239, "misc.test"}, "<45223423@example.com>"},
-        {{3002322, "misc.test"}, "<2232003@example.com>"},
-      ]
-    ]
-  end
-
-  defp match(%{id: id}, id), do: true
-  defp match(_, _), do: false
 
 end

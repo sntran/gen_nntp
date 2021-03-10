@@ -24,15 +24,15 @@ defmodule TestNNTPServer do
   @impl GenNNTP
   def init(options \\ []) do
     # Init arguments if any.
-    args = Keyword.get(options, :args)
+    args = Access.get(options, :args)
 
     case maybe_apply(options, :init, [args], {:ok, args}) do
       {:ok, state} ->
-        client = Keyword.put(options, :state, state)
+        client = put_in(options[:state], state)
         {:ok, client}
 
       {:ok, state, delay} ->
-        client = Keyword.put(options, :state, state)
+        client = put_in(options[:state], state)
         {:ok, client, delay}
 
       other ->
@@ -46,7 +46,7 @@ defmodule TestNNTPServer do
 
     case maybe_apply(client, :handle_CAPABILITIES, [state], {:ok, [], state}) do
       {:ok, capabilities, state} ->
-        client = Keyword.put(client, :state, state)
+        client = put_in(client[:state], state)
         {:ok, capabilities, client}
       other ->
         other
@@ -59,7 +59,7 @@ defmodule TestNNTPServer do
 
     case maybe_apply(client, :handle_GROUP, [group, state], {:ok, {group, 0, 0, 0}, state}) do
       {:ok, group_info, state} ->
-        client = Keyword.put(client, :state, state)
+        client = put_in(client[:state], state)
         {:ok, group_info, client}
       other ->
         other
@@ -72,7 +72,7 @@ defmodule TestNNTPServer do
 
     case maybe_apply(client, :handle_LISTGROUP, [group, state], {:ok, {group, 0, 0, 0}, state}) do
       {:ok, group_info, state} ->
-        client = Keyword.put(client, :state, state)
+        client = put_in(client[:state], state)
         {:ok, group_info, client}
       other ->
         other
@@ -85,7 +85,7 @@ defmodule TestNNTPServer do
 
     case maybe_apply(client, :handle_ARTICLE, [arg, state], {:ok, {0, {arg, %{}, ""}}, state}) do
       {:ok, article_info, state} ->
-        client = Keyword.put(client, :state, state)
+        client = put_in(client[:state], state)
         {:ok, article_info, client}
       other ->
         other
@@ -98,7 +98,7 @@ defmodule TestNNTPServer do
 
     case maybe_apply(client, :handle_HEAD, [arg, state], {:ok, {0, {arg, %{}, ""}}, state}) do
       {:ok, article_info, state} ->
-        client = Keyword.put(client, :state, state)
+        client = put_in(client[:state], state)
         {:ok, article_info, client}
       other ->
         other
@@ -111,7 +111,7 @@ defmodule TestNNTPServer do
 
     case maybe_apply(client, :handle_BODY, [arg, state], {:ok, {0, {arg, %{}, ""}}, state}) do
       {:ok, article_info, state} ->
-        client = Keyword.put(client, :state, state)
+        client = put_in(client[:state], state)
         {:ok, article_info, client}
       other ->
         other
@@ -124,7 +124,7 @@ defmodule TestNNTPServer do
 
     case maybe_apply(client, :handle_STAT, [arg, state], {:ok, {0, {arg, %{}, ""}}, state}) do
       {:ok, article_info, state} ->
-        client = Keyword.put(client, :state, state)
+        client = put_in(client[:state], state)
         {:ok, article_info, client}
       other ->
         other
@@ -137,7 +137,7 @@ defmodule TestNNTPServer do
 
     case maybe_apply(client, :handle_HELP, [state], {:ok, "", state}) do
       {:ok, help_text, state} ->
-        client = Keyword.put(client, :state, state)
+        client = put_in(client[:state], state)
         {:ok, help_text, client}
       other ->
         other
@@ -150,7 +150,7 @@ defmodule TestNNTPServer do
   end
 
   defp maybe_apply(server, fun, args, default_reply) do
-    case Keyword.get(server, fun) do
+    case Access.get(server, fun) do
       nil ->
         default_reply
 
