@@ -115,7 +115,6 @@ defmodule GenNNTP.TestCase do
   end
 
   def setup_NEXT(context) do
-    # articles = context[:articles]
     groups = context[:groups]
     group_articles = context[:group_articles]
 
@@ -131,6 +130,24 @@ defmodule GenNNTP.TestCase do
       {_, message_id} = List.keyfind(group_articles, {next, group}, 0)
 
       {:ok, {next, %{id: message_id}}, state}
+    end]
+  end
+
+  def setup_LAST(context) do
+    groups = context[:groups]
+    group_articles = context[:group_articles]
+
+    [handle_LAST: fn({article_number, group}, state) ->
+      Kernel.send(:tester, {:called_back, :handle_LAST, 2})
+
+      # The group is guaranteed to exist here (in testing).
+      {_, _number, _low, _high, numbers} = List.keyfind(groups, group, 0)
+      # Get the previous article in that newsgroup whose number is less than
+      # the current article number.
+      prev = Enum.find(numbers, article_number, fn(number) -> number < article_number end)
+      {_, message_id} = List.keyfind(group_articles, {prev, group}, 0)
+
+      {:ok, {prev, %{id: message_id}}, state}
     end]
   end
 

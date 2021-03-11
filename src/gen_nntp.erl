@@ -98,6 +98,13 @@
             when Number :: non_neg_integer(),
                  Arg :: message_id() | {Number, Group :: binary()}.
 
+-callback handle_LAST(Arg, state()) ->
+            {ok, { Number, article() }, state()}
+            | {ok, false, state()}
+            | {error, Reason :: binary(), state()}
+            when Number :: non_neg_integer(),
+                 Arg :: message_id() | {Number, Group :: binary()}.
+
 -callback handle_ARTICLE(Arg, state()) ->
             {ok, { Number, article() }, state()}
             | {ok, false, state()}
@@ -138,6 +145,7 @@
   handle_GROUP/2,
   handle_LISTGROUP/2,
   handle_NEXT/2,
+  handle_LAST/2,
   handle_ARTICLE/2,
   handle_HEAD/2,
   handle_BODY/2,
@@ -527,6 +535,46 @@ handle_command(<<"NEXT">> = Cmd, Client) ->
   end,
   {reply, Reply, Client#client{article_number = NewNumber, state = NewState}};
 
+% The currently selected group is invalid, and no argument is specified.
+handle_command(<<"LAST">>, #client{group = invalid} = Client) ->
+  {reply, <<"412 No newsgroup selected">>, Client};
+
+% Have currently selected group, but current article number is invalid.
+handle_command(<<"LAST">>, #client{article_number = invalid} = Client) ->
+  {reply, <<"420 Current article number is invalid">>, Client};
+
+handle_command(<<"LAST">> = Cmd, Client) ->
+  #client{
+    module = Module,
+    state = State,
+    group = Group,
+    article_number = ArticleNumber
+  } = Client,
+
+  % Asks the callback module to provide the capacitities at this moment.
+  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
+
+  {Reply, NewState} = case is_capable(Cmd, Capabilities) of
+    true ->
+      {ok, ArticleInfo, State2} = Module:handle_LAST({ArticleNumber, Group}, State1),
+      case ArticleInfo of
+        false -> {<<"423 No article with that number">>, State2};
+
+        % Current article number is already the first article
+        {ArticleNumber, _} ->
+          Response = <<"422 No previous article in this group">>,
+          {Response, State2};
+
+        % Previous article exists
+        {Number, #{id := Id}} ->
+          Response = [<<"223 ">>, integer_to_binary(Number), <<" ">>, Id, <<" Article found">>],
+          {Response, State2}
+      end;
+    false ->
+      {<<"412 No newsgroup selected">>, State1}
+  end,
+  {reply, Reply, Client#client{state = NewState}};
+
 % Both ARTICLE, HEAD, BODY, and STAT have similar response.
 handle_command(<<"ARTICLE", Arg/binary>>, Client) ->
   handle_article(<<"ARTICLE">>, Arg, Client);
@@ -702,6 +750,8 @@ is_capable(<<"GROUP", _Arg/binary>>, Capabilities) ->
 is_capable(<<"LISTGROUP", _Arg/binary>>, Capabilities) ->
   is_capable(<<"READER">>, Capabilities);
 is_capable(<<"NEXT", _Arg/binary>>, Capabilities) ->
+  is_capable(<<"READER">>, Capabilities);
+is_capable(<<"LAST", _Arg/binary>>, Capabilities) ->
   is_capable(<<"READER">>, Capabilities);
 is_capable(<<"ARTICLE", _Arg/binary>>, Capabilities) ->
   is_capable(<<"READER">>, Capabilities);
