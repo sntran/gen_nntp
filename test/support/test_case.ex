@@ -114,6 +114,26 @@ defmodule GenNNTP.TestCase do
     end]
   end
 
+  def setup_NEXT(context) do
+    # articles = context[:articles]
+    groups = context[:groups]
+    group_articles = context[:group_articles]
+
+    [handle_NEXT: fn({article_number, group}, state) ->
+      Kernel.send(:tester, {:called_back, :handle_NEXT, 2})
+
+      # The group is guaranteed to exist here (in testing).
+      {_, _estimate, _low, _high, numbers} = List.keyfind(groups, group, 0)
+      # Get the first article in that newsgroup whose number is greater than
+      # the current article number.
+      next = Enum.find(numbers, article_number, fn(number) -> number > article_number end)
+      # Get the message id of the next article number.
+      {_, message_id} = List.keyfind(group_articles, {next, group}, 0)
+
+      {:ok, {next, %{id: message_id}}, state}
+    end]
+  end
+
   def setup_ARTICLE(context) do
     articles = context[:articles]
     group_articles = context[:group_articles]

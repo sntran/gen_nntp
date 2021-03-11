@@ -399,6 +399,150 @@ defmodule GenNNTPTest do
 
   end
 
+  describe "@callback handle_NEXT/2" do
+    # Default to have "READER" capability for "NEXT" to work.
+    @describetag capabilities: ["READER"]
+
+    setup [
+      :setup_articles, :setup_groups, :setup_group_articles,
+      :setup_CAPABILITIES, :setup_GROUP, :setup_NEXT,
+      :setup_server, :setup_socket
+    ]
+
+    # The setup sets a list of capabilities with "READER" by default, so we empty it here.
+    @tag capabilities: []
+    test "is not called when there is no READER capability", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "NEXT\r\n")
+
+      refute_receive(
+        {:called_back, :handle_NEXT, 2},
+        100,
+        "@callback handle_NEXT/2 should not be called when the server has no READER capability"
+      )
+    end
+
+    # The setup sets a list of capabilities with "READER" by default, so we empty it here.
+    @tag capabilities: []
+    test "responds with 412 when there is no READER capability", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "NEXT\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      # @sntran: This is unclear to me, as the specs say nothing about this case.
+      assert response =~ ~r/^412 /
+    end
+
+    test "responds with 412 if currently selected newsgroup is invalid", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "NEXT\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^412 /
+    end
+
+    test "is called when the client asks for it and currently selected newsgroup is valid", context do
+      %{socket: socket} = context
+
+      refute_receive(
+        {:called_back, :handle_NEXT, 2},
+        100,
+        "@callback handle_NEXT/2 should not be called when client has not asked for it"
+      )
+
+      group_name = "misc.test"
+      # Calling "GROUP" should set the current article number to the first article in the group
+      :ok = :gen_tcp.send(socket, "GROUP #{group_name}\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      :ok = :gen_tcp.send(socket, "NEXT\r\n")
+
+      assert_receive(
+        {:called_back, :handle_NEXT, 2},
+        100,
+        "@callback handle_NEXT/2 was not called"
+      )
+    end
+
+    test "responds with 420 if current article number is invalid", context do
+      %{socket: socket, groups: groups} = context
+
+      # This is the case where currently selected newsgroup is valid, but it's empty.
+      group_name = "example.empty.newsgroup"
+      {^group_name, 0, 0, 0, _} = List.keyfind(groups, group_name, 0, false)
+
+      # Calling "GROUP" should set the current article number to the first article in the group
+      :ok = :gen_tcp.send(socket, "GROUP #{group_name}\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      :ok = :gen_tcp.send(socket, "NEXT\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^420 /
+    end
+
+    test "responds with `223 n message-id` of the next article", context do
+      %{socket: socket, groups: groups, group_articles: group_articles} = context
+
+      group_name = "misc.test"
+      {^group_name, _estimate, low, _high, [low, next | _]} = List.keyfind(groups, group_name, 0)
+      # Get the message id of the next article number.
+      {_, message_id} = List.keyfind(group_articles, {next, group_name}, 0)
+
+      # Calling "GROUP" should set the current article number to the first article in the group
+      :ok = :gen_tcp.send(socket, "GROUP #{group_name}\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      :ok = :gen_tcp.send(socket, "NEXT\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^223 #{next} #{message_id} /
+    end
+
+    test "responds with `223 n message-id` of the next article after next", context do
+      %{socket: socket, groups: groups, group_articles: group_articles} = context
+
+      group_name = "misc.test"
+      {^group_name, _estimate, low, _high, [low, _next, next | _]} = List.keyfind(groups, group_name, 0)
+      # Get the message id of the next article number.
+      {_, message_id} = List.keyfind(group_articles, {next, group_name}, 0)
+
+      # Calling "GROUP" should set the current article number to the first article in the group
+      :ok = :gen_tcp.send(socket, "GROUP #{group_name}\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      :ok = :gen_tcp.send(socket, "NEXT\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      :ok = :gen_tcp.send(socket, "NEXT\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^223 #{next} #{message_id} /
+    end
+
+    test "responds with 421 when current article number is already the last article of the newsgroup", context do
+      %{socket: socket, groups: groups} = context
+
+      group_name = "misc.test"
+      {^group_name, _estimate, low, _high, [low | rest]} = List.keyfind(groups, group_name, 0)
+
+      # Calling "GROUP" should set the current article number to the first article in the group
+      :ok = :gen_tcp.send(socket, "GROUP #{group_name}\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      # Advance to the last article.
+      Enum.each(rest, fn(_number) ->
+        :ok = :gen_tcp.send(socket, "NEXT\r\n")
+        {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+        assert response =~ ~r/^223 /
+      end)
+
+      # Because we have just switched group, the callback should return the same article number.
+      :ok = :gen_tcp.send(socket, "NEXT\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^421 /
+    end
+
+  end
+
   describe "@callback handle_ARTICLE/2" do
     # Default to have "READER" capability for "ARTICLE" to work.
     @describetag capabilities: ["READER"]

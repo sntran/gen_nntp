@@ -80,6 +80,19 @@ defmodule TestNNTPServer do
   end
 
   @impl GenNNTP
+  def handle_NEXT({article_number, _group} = arg, client) do
+    state = client[:state]
+
+    case maybe_apply(client, :handle_NEXT, [arg, state], {:ok, {article_number, %{}}, state}) do
+      {:ok, article_info, state} ->
+        client = put_in(client[:state], state)
+        {:ok, article_info, client}
+      other ->
+        other
+    end
+  end
+
+  @impl GenNNTP
   def handle_ARTICLE(arg, client) do
     state = client[:state]
 
