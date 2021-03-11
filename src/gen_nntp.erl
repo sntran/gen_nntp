@@ -149,7 +149,8 @@
   handle_ARTICLE/2,
   handle_HEAD/2,
   handle_BODY/2,
-  handle_STAT/2
+  handle_STAT/2,
+  handle_command/2
 ]).
 
 %% ==================================================================
@@ -615,15 +616,20 @@ handle_command(<<"QUIT">>, Client) ->
 handle_command(Command, Client) ->
   #client{module = Module, state = State} = Client,
 
-  case Module:handle_command(Command, State) of
-    {reply, Reply, State1} ->
-      {reply, Reply, Client#client{state = State1}};
-    {noreply, State1} ->
-      {noreply, Client#client{state = State1}};
-    {stop, Reason, State1} ->
-      {stop, Reason, Client#client{state = State1}};
-    {stop, Reason, Reply, State1} ->
-      {stop, Reason, Reply, Client#client{state = State1}}
+  case erlang:function_exported(Module, handle_command, 2) of
+    false ->
+      {reply, <<"500 Unknown command">>, State};
+    true ->
+      case Module:handle_command(Command, State) of
+        {reply, Reply, State1} ->
+          {reply, Reply, Client#client{state = State1}};
+        {noreply, State1} ->
+          {noreply, Client#client{state = State1}};
+        {stop, Reason, State1} ->
+          {stop, Reason, Client#client{state = State1}};
+        {stop, Reason, Reply, State1} ->
+          {stop, Reason, Reply, Client#client{state = State1}}
+      end
   end.
 
 % Trim the leading whitespace if any.

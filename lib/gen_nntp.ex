@@ -120,6 +120,7 @@ defmodule GenNNTP do
     handle_ARTICLE: 2,
     handle_HEAD: 2,
     handle_BODY: 2,
-    handle_STAT: 2
+    handle_STAT: 2,
+    handle_command: 2
   ]
 end

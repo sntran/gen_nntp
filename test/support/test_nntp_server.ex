@@ -170,11 +170,6 @@ defmodule TestNNTPServer do
     end
   end
 
-  @impl GenNNTP
-  def handle_command(_command, state) do
-    {:noreply, state}
-  end
-
   defp maybe_apply(server, fun, args, default_reply) do
     case Access.get(server, fun) do
       nil ->
