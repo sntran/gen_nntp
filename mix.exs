@@ -1,7 +1,7 @@
 defmodule GenNntp.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.18.0"
 
   def project do
     [
@@ -9,9 +9,9 @@ defmodule GenNntp.MixProject do
       version: @version,
       name: "GenNNTP",
       source_url: "https://github.com/sntran/gen_nntp",
-      homepage_url: "http://sntran.github.io/gen_nntp",
+      homepage_url: "https://sntran.github.io/gen_nntp",
       description: """
-      A behaviour for defining NNTP Server.
+      The NNTP client and server library.
       """,
       elixir: "~> 1.11",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -37,7 +37,8 @@ defmodule GenNntp.MixProject do
   defp deps do
     [
       {:ranch, "~> 2.0.0"},
-      {:mix_test_watch, "~> 1.0", only: :dev, runtime: false}
+      {:mix_test_watch, "~> 1.0", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.23", only: :dev, runtime: false},
     ]
   end
 
