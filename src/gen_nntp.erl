@@ -519,7 +519,7 @@ handle_command(<<"NEXT">> = Cmd, Client) ->
     true ->
       {ok, ArticleInfo, State2} = Module:handle_NEXT({ArticleNumber, Group}, State1),
       case ArticleInfo of
-        false -> {<<"423 No article with that number">>, ArticleNumber, State2};
+        false -> {<<"421 No article with that number">>, ArticleNumber, State2};
 
         % Current article number is already the last article
         {ArticleNumber, _} ->
@@ -559,7 +559,7 @@ handle_command(<<"LAST">> = Cmd, Client) ->
     true ->
       {ok, ArticleInfo, State2} = Module:handle_LAST({ArticleNumber, Group}, State1),
       case ArticleInfo of
-        false -> {<<"423 No article with that number">>, State2};
+        false -> {<<"422 No article with that number">>, State2};
 
         % Current article number is already the first article
         {ArticleNumber, _} ->
