@@ -50,8 +50,8 @@ defmodule GenNntp.MixProject do
       licenses: ["Apache 2.0"],
       links: %{github: "https://github.com/sntran/gen_nntp"},
       files:
-        ~w(assets examples include lib priv src) ++
-          ~w(.formatter.exs mix.exs CHANGELOG.md LICENSE README.md Emakefile),
+        ~w(examples include lib priv src) ++
+          ~w(.formatter.exs mix.exs CHANGELOG.md LICENSE README.md),
       exclude_patterns: [".DS_Store"]
     ]
   end
