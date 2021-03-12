@@ -20,3 +20,34 @@ end
 Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
 and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
 be found at [https://hexdocs.pm/gen_nntp](https://hexdocs.pm/gen_nntp).
+
+## NNTP Protocols
+
+### Commands
+
+- [x] CAPABILITIES
+- [x] HEAD
+- [x] HELP
+- [x] QUIT
+- [x] STAT
+- [ ] HDR
+- [ ] LIST HEADERS
+- [ ] IHAVE
+- [ ] LIST
+- [ ] LIST ACTIVE
+- [ ] LIST ACTIVE.TIMES
+- [ ] LIST DISTRIB.PATS
+- [ ] LIST NEWSGROUPS
+- [ ] MODE READER
+- [ ] NEWNEWS
+- [ ] OVER
+- [ ] LIST OVERVIEW.FMT
+- [ ] POST
+- [ ] ARTICLE
+- [x] BODY
+- [ ] DATE
+- [x] GROUP
+- [x] LAST
+- [x] LISTGROUP
+- [ ] NEWGROUPS
+- [x] NEXT
