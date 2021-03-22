@@ -1241,6 +1241,35 @@ defmodule GenNNTPTest do
     defp to_line({k, v}), do: "#{ k }: #{ v }"
   end
 
+  describe "DATE command" do
+    @describetag capabilities: ["READER"]
+
+    setup [
+      :setup_CAPABILITIES,
+      :setup_server, :setup_socket,
+    ]
+
+    test "responds with 111", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "DATE\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+
+      assert response =~ ~r/^111 \d{4}\d{2}\d{2}\d{2}\d{2}\d{2}/
+    end
+
+    test "responnds with the current UTC date and time on server", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "DATE\r\n")
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+
+      now = DateTime.utc_now()
+
+      assert response === "111 #{Calendar.strftime(now, "%Y%m%d%H%M%S")}\r\n"
+    end
+  end
+
   describe "@callback handle_HELP/1" do
     setup do
       help_text = String.trim("""

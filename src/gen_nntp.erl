@@ -634,6 +634,25 @@ handle_command(<<"POST">>, Client) ->
       {reply, <<"440 Posting not permitted">>, Client#client{state = State1}}
   end;
 
+% Clients wants to find out the current Coordinated Universal Time from the
+% server's perspective. Responds with 111 and the date and time on the server
+% in the form yyyymmddhhmmss.
+handle_command(<<"DATE">>, Client) ->
+  Now = erlang:timestamp(),
+  {{Years, Months, Days},{Hours, Minutes, Seconds}} = calendar:now_to_universal_time(Now),
+
+  Reply = [
+    <<"111 ">>,
+    integer_to_binary(Years),
+    string:pad(integer_to_binary(Months), 2, leading, <<"0">>),
+    string:pad(integer_to_binary(Days), 2, leading, <<"0">>),
+    string:pad(integer_to_binary(Hours), 2, leading, <<"0">>),
+    string:pad(integer_to_binary(Minutes), 2, leading, <<"0">>),
+    string:pad(integer_to_binary(Seconds), 2, leading, <<"0">>)
+  ],
+
+  {reply, Reply, Client};
+
 % This command provides a short summary of the commands that are
 % understood by this implementation of the server.  The help text will
 % be presented as a multi-line data block following the 100 response
