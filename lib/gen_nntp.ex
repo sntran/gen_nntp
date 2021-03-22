@@ -321,7 +321,7 @@ defmodule GenNNTP do
 
   Returning `{:error, reason}` to reject the article with specific reason.
   """
-  @callback handle_POST(:gen_nttp.article(), state) ::
+  @callback handle_POST(article :: :gen_nttp.article(), state) ::
     {:ok, state} | {:error, reason :: String.t(), state}
 
   @doc """
