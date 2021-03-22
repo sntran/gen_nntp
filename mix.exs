@@ -36,7 +36,7 @@ defmodule GenNntp.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ranch, "~> 2.0.0"},
+      {:ranch, "~> 1.7.1"},
       {:mix_test_watch, "~> 1.0", only: :dev, runtime: false},
       {:ex_doc, "~> 0.23", only: :dev, runtime: false},
     ]
