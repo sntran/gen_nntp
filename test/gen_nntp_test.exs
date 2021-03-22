@@ -987,6 +987,260 @@ defmodule GenNNTPTest do
 
   end
 
+  describe "@callback handle_POST/2" do
+    @describetag capabilities: ["POST"]
+
+    setup [
+      :setup_CAPABILITIES, :setup_POST,
+      :setup_server, :setup_socket,
+    ]
+
+    test "is not called right after POST", context do
+      %{socket: socket} = context
+
+      refute_receive(
+        {:called_back, :handle_POST, 2},
+        100,
+        "@callback handle_POST/2 should not be called when client has not asked for it"
+      )
+
+      :ok = :gen_tcp.send(socket, "POST\r\n")
+
+      refute_receive(
+        {:called_back, :handle_POST, 2},
+        100,
+        "@callback handle_POST/2 should not be called when client has only sent POST"
+      )
+    end
+
+    test "client receives 340 from server after POST", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "POST\r\n")
+
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^340 /
+    end
+
+    # Resets the capabilities to not allow posting.
+    @tag capabilities: []
+    test "client receives 440 when the server does not allow posting", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "POST\r\n")
+
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^440 /
+    end
+
+    test "is called when the client finishes sending article", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "POST\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      :ok = :gen_tcp.send(
+        socket,
+        Enum.join([
+          "Message-ID: <test@post>",
+          "From: \"Demo User\" <nobody@example.net>",
+          "Newsgroups: misc.test",
+          "Subject: I am just a test article",
+          "Organization: An Example Net",
+          "",
+          "This is just a test article.",
+          ".",
+          "",
+        ], "\r\n")
+      )
+
+      assert_receive(
+        {:called_back, :handle_POST, _},
+        100,
+        "@callback handle_POST/2 was not called"
+      )
+    end
+
+    test "is called with an article map", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "POST\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      headers = %{
+        "Message-ID" => "<test@post>",
+        "From" => "\"Demo User\" <nobody@example.net>",
+        "Newsgroups" => "misc.test",
+        "Subject" => "I am just a test article",
+        "Organization" => "An Example Net",
+      }
+
+      body = "This is just a test article."
+
+      :ok = :gen_tcp.send(
+        socket,
+        Enum.join([
+          to_line(headers),
+          "",
+          body,
+          ".",
+          ""
+        ], "\r\n")
+      )
+
+      assert_receive(
+        {:called_back, :handle_POST, %{ headers: ^headers, body: ^body }},
+        100,
+        "@callback handle_POST/2 was not called"
+      )
+    end
+
+    test "supports empty body", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "POST\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      headers = %{
+        "Message-ID" => "<test@post>",
+        "From" => "\"Demo User\" <nobody@example.net>",
+        "Newsgroups" => "misc.test",
+        "Subject" => "I am just a test article",
+        "Organization" => "An Example Net",
+      }
+
+      body = ""
+
+      :ok = :gen_tcp.send(
+        socket,
+        Enum.join([
+          to_line(headers),
+          "",
+          body,
+          ".",
+          ""
+        ], "\r\n")
+      )
+
+      assert_receive(
+        {:called_back, :handle_POST, %{ headers: ^headers, body: ^body }},
+        100,
+        "@callback handle_POST/2 was not called"
+      )
+    end
+
+    test "supports multi-line body", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "POST\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      headers = %{
+        "Message-ID" => "<test@post>",
+        "From" => "\"Demo User\" <nobody@example.net>",
+        "Newsgroups" => "misc.test",
+        "Subject" => "I am just a test article",
+        "Organization" => "An Example Net",
+      }
+
+      body_lines = [
+        "This is just a test article that can ",
+        "span multiple lines, as long as it ends ",
+        "with a \".\"",
+      ]
+
+      :ok = :gen_tcp.send(
+        socket,
+        Enum.join([
+          to_line(headers),
+          "",
+          Enum.join(body_lines, "\r\n"),
+          ".",
+          ""
+        ], "\r\n")
+      )
+
+      assert_receive(
+        {:called_back, :handle_POST, %{ headers: ^headers, body: body }},
+        100,
+        "@callback handle_POST/2 was not called"
+      )
+
+      assert body === Enum.join(body_lines, "")
+    end
+
+    test "responds with 240 if callback returns an ok-tuple", context do
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "POST\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      headers = %{
+        "Message-ID" => "<test@post>",
+        "From" => "\"Demo User\" <nobody@example.net>",
+        "Newsgroups" => "misc.test",
+        "Subject" => "I am just a test article",
+        "Organization" => "An Example Net",
+      }
+
+      body = ""
+
+      :ok = :gen_tcp.send(
+        socket,
+        Enum.join([
+          to_line(headers),
+          "",
+          body,
+          ".",
+          ""
+        ], "\r\n")
+      )
+
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^240 /
+    end
+
+    test "responds with 441 to reject if callback returns an error-tuple", context do
+      # Here we only test an example case by rejecting the article if it does
+      # not have "Message-ID" header. In practive, that is totally valid, and
+      # it's up to the server implementation to generate the message's ID.
+      %{socket: socket} = context
+
+      :ok = :gen_tcp.send(socket, "POST\r\n")
+      {:ok, _response} = :gen_tcp.recv(socket, 0, 1000)
+
+      headers = %{
+        "From" => "\"Demo User\" <nobody@example.net>",
+        "Newsgroups" => "misc.test",
+        "Subject" => "I am just a test article",
+        "Organization" => "An Example Net",
+      }
+
+      body = ""
+
+      :ok = :gen_tcp.send(
+        socket,
+        Enum.join([
+          to_line(headers),
+          "",
+          body,
+          ".",
+          ""
+        ], "\r\n")
+      )
+
+      {:ok, response} = :gen_tcp.recv(socket, 0, 1000)
+      assert response =~ ~r/^441 /
+    end
+
+    # Helpers
+    defp to_line(headers) when is_map(headers) do
+      Enum.map_join(headers, "\r\n", &to_line/1)
+    end
+
+    defp to_line({k, v}), do: "#{ k }: #{ v }"
+  end
+
   describe "@callback handle_HELP/1" do
     setup do
       help_text = String.trim("""

@@ -313,6 +313,18 @@ defmodule GenNNTP do
         arg: :gen_nttp.message_id() | {number, group :: String.t()}
 
   @doc """
+  Invoked when a client sends an article to be posted.
+
+  The callback receives a map of type `article()` without `id` field.
+
+  Returning `{:ok, new_state}` to accept the article.
+
+  Returning `{:error, reason}` to reject the article with specific reason.
+  """
+  @callback handle_POST(:gen_nttp.article(), state) ::
+    {:ok, state} | {:error, reason :: String.t(), state}
+
+  @doc """
   Invoked when a client wants summary of the server.
 
   Returning `{:ok, help_test, new_state}` to respond the `help_text` to the
@@ -347,6 +359,7 @@ defmodule GenNNTP do
     handle_HEAD: 2,
     handle_BODY: 2,
     handle_STAT: 2,
+    handle_POST: 2,
     handle_command: 2
   ]
 end

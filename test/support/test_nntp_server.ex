@@ -158,6 +158,20 @@ defmodule TestNNTPServer do
   end
 
   @impl GenNNTP
+  def handle_POST(article, client) do
+    state = client[:state]
+
+    case maybe_apply(client, :handle_POST, [article, state], {:ok, state}) do
+      {:ok, state} ->
+        client = put_in(client[:state], state)
+        {:ok, client}
+      {:error, reason, state} ->
+        client = put_in(client[:state], state)
+        {:error, reason, client}
+    end
+  end
+
+  @impl GenNNTP
   def handle_HELP(client) do
     state = client[:state]
 

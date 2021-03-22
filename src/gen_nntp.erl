@@ -43,6 +43,7 @@
 
 -record(client, {
   transport :: module(),
+  socket :: socket(),
   module :: module(),
   % currently selected newsgroup
   group :: invalid | binary(),
@@ -133,6 +134,9 @@
             when Number :: non_neg_integer(),
                  Arg :: message_id() | {Number, Group :: binary()}.
 
+-callback handle_POST(article(), state()) ->
+            {ok, state()} | {error, Reason :: binary(), state()}.
+
 -callback handle_HELP(state()) -> {ok, HelpText :: [binary()], state()}.
 
 -callback handle_command(Command :: binary(), state()) ->
@@ -150,6 +154,7 @@
   handle_HEAD/2,
   handle_BODY/2,
   handle_STAT/2,
+  handle_POST/2,
   handle_command/2
 ]).
 
@@ -313,9 +318,9 @@ handle_info({tcp, Socket, Line}, #client{transport = Transport} = Client) ->
   % Removes the CRLF pair.
   Command = string:chomp(Line),
 
-  case handle_command(Command, Client) of
+  case handle_command(Command, Client#client{socket = Socket}) of
     {reply, Reply, NewClient} ->
-      Transport:send(Socket, [Reply, "\r\n"]),
+      Transport:send(Socket, [Reply, <<"\r\n">>]),
       ok = Transport:setopts(Socket, [{active, once}]),
       {noreply, NewClient};
 
@@ -323,13 +328,10 @@ handle_info({tcp, Socket, Line}, #client{transport = Transport} = Client) ->
       {noreply, NewClient};
 
     {stop, Reason, Reply, NewClient} ->
-      Transport:send(Socket, [Reply, "\r\n"]),
+      Transport:send(Socket, [Reply, <<"\r\n">>]),
       Transport:close(Socket),
       {stop, Reason, NewClient}
   end;
-
-% handle_info({tcp, Socket, <<"GROUP ", Group/binary, "\r\n">>}, Client) ->
-%   #client{transport = Transport, module = Module, state = State} = Client,
 
 handle_info({tcp_closed, _Socket}, Client) ->
   {stop, normal, Client};
@@ -589,6 +591,49 @@ handle_command(<<"BODY", Arg/binary>>, Client) ->
 handle_command(<<"STAT", Arg/binary>>, Client) ->
   handle_article(<<"STAT">>, Arg, Client);
 
+% Client wants to post an article. Responds with 340 to tell the client to send
+% the article as multi-line block data; otherwise, responds with 440 if POSTING
+% is not allowed.
+% The multi-line block data is parsed into a map of type `article()` and sent
+% to the `handle_POST/2` callback for processing.
+% The callback can decide wheether to accept the article with an ok-tuple, or
+% reject it with an error-tuple.
+% The callback only needs to accept the article, and do the actual transfer in
+% async fashion if needs to.
+handle_command(<<"POST">>, Client) ->
+  #client{
+    transport = Transport, socket = Socket,
+    module = Module, state = State
+  } = Client,
+
+  % Asks the callback module to provide the capacitities at this moment.
+  {ok, Capabilities, State1} = Module:handle_CAPABILITIES(State),
+
+  case is_capable(<<"POST">>, Capabilities) of
+    true ->
+      Transport:send(Socket, [<<"340 Input article; end with <CR-LF>.<CR-LF>">>, <<"\r\n">>]),
+
+      case gen_tcp:recv(Socket, 0, 1000) of
+        % The socket can be closed at any point.
+        {error, closed} ->
+          {noreply, Client};
+        Result ->
+          {ok, Lines} = multiline(Socket, Result),
+          Article = to_article(Lines),
+
+          {Reply, NewState} = case Module:handle_POST(Article, State1) of
+            {ok, State2} ->
+              {<<"240 Article received OK">>, State2};
+            {error, Reason, State2} ->
+              {<<"441 ", Reason/binary>>, State2}
+          end,
+
+          {reply, Reply, Client#client{state = NewState}}
+      end;
+    false ->
+      {reply, <<"440 Posting not permitted">>, Client#client{state = State1}}
+  end;
+
 % This command provides a short summary of the commands that are
 % understood by this implementation of the server.  The help text will
 % be presented as a multi-line data block following the 100 response
@@ -720,6 +765,7 @@ handle_article(Type, Arg, Client) ->
 
 % Collects a multi-line response from a socket.
 % Stops when encountered a ".". Last CRLF is removed.
+%% @private
 -spec multiline(socket(), {ok, binary()} | {error, recv_error()}) ->
   {ok, binary()} | {error, Reason :: binary()}.
 multiline(_Socket, {error, Reason}) ->
@@ -801,3 +847,29 @@ to_binary(#{body := Body}) ->
 
 to_binary(#{id := _Id}) ->
   <<"">>.
+
+% Converts a multi-line data block into an article.
+%% @private
+-spec to_article(binary()) -> article().
+to_article(MultiLineDataBlock) when is_binary(MultiLineDataBlock) ->
+  Lines = binary:split(string:chomp(MultiLineDataBlock), <<"\r\n">>, [global]),
+  { HeaderLines, Body } = lists:splitwith(
+    fun(Line) -> Line =/= <<"">> end,
+    Lines
+  ),
+
+  Headers = maps:from_list(
+    lists:map(
+      fun(Line) ->
+        [Name, Content] = binary:split(Line, <<": ">>),
+        {Name, Content}
+      end,
+      HeaderLines
+    )
+  ),
+
+  #{
+    % id => maps:get(<<"Message-ID">>, Headers, <<"foo@bar.com">>),
+    headers => Headers,
+    body => join(<<"">>, Body)
+  }.

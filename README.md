@@ -14,7 +14,7 @@ by adding `gen_nntp` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:gen_nntp, "~> 0.18.0"}
+    {:gen_nntp, "~> 0.19.0"}
   ]
 end
 ```
@@ -44,7 +44,7 @@ be found at [https://hexdocs.pm/gen_nntp](https://hexdocs.pm/gen_nntp).
 - [ ] NEWNEWS
 - [ ] OVER
 - [ ] LIST OVERVIEW.FMT
-- [ ] POST
+- [x] POST
 - [ ] ARTICLE
 - [x] BODY
 - [ ] DATE

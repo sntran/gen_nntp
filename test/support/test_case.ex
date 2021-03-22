@@ -278,6 +278,25 @@ defmodule GenNNTP.TestCase do
     end]
   end
 
+  def setup_POST(_context) do
+    [handle_POST: fn(article, state) ->
+      Kernel.send(:tester, {:called_back, :handle_POST, article})
+
+      headers = article[:headers]
+
+      # Here we reject the article if it does not have "Message-ID" header.
+      # However, it's up to the server implementation to accept that case and
+      # generate a UUID in place. This is just a test.
+      case Map.get(headers, "Message-ID", nil) do
+        nil ->
+          {:error, "Missing Message-ID", state}
+        _ ->
+          {:ok, state}
+      end
+
+    end]
+  end
+
   def setup_server(context) do
     TestNNTPServer.start(context)
     :ok
