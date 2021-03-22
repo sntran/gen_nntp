@@ -869,7 +869,7 @@ to_article(MultiLineDataBlock) when is_binary(MultiLineDataBlock) ->
   ),
 
   #{
-    % id => maps:get(<<"Message-ID">>, Headers, <<"foo@bar.com">>),
+    id => <<"">>,
     headers => Headers,
     body => join(<<"">>, Body)
   }.
