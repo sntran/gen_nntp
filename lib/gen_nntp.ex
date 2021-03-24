@@ -242,15 +242,26 @@ defmodule GenNNTP do
       iex> is_port(socket)
       true
 
-      iex> {:ok, socket, _greeting} = GenNNTP.connect("localhost", 119)
+      iex> {:ok, socket, _greeting} = GenNNTP.connect(
+      ...>   "localhost",
+      ...>   String.to_integer(System.get_env("PORT", "119"))
+      ...> )
       iex> is_port(socket)
       true
 
-      iex> {:ok, socket, _greeting} = GenNNTP.connect("localhost", 119, [])
+      iex> {:ok, socket, _greeting} = GenNNTP.connect(
+      ...>   "localhost",
+      ...>   String.to_integer(System.get_env("PORT", "119")),
+      ...>   []
+      ...> )
       iex> is_port(socket)
       true
 
-      iex> {:ok, _socket, "200 " <> _} = GenNNTP.connect("localhost", 119, [])
+      iex> {:ok, _socket, "200 " <> _} = GenNNTP.connect(
+      ...>   "localhost",
+      ...>   String.to_integer(System.get_env("PORT", "119")),
+      ...>   []
+      ...> )
   """
   defdelegate connect(address \\ "localhost", port \\ @port, options \\ []), to: :gen_nntp
 
