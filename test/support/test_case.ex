@@ -14,6 +14,13 @@ defmodule GenNNTP.TestCase do
     unless tags[:async] do
     end
 
+    if tags[:server] do
+      tags
+        |> Map.to_list
+        |> Keyword.merge(setup_CAPABILITIES(tags))
+        |> setup_server()
+    end
+
     :ok
   end
 

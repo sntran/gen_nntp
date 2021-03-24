@@ -1,6 +1,9 @@
 defmodule GenNNTPTest do
   use GenNNTP.TestCase, async: true
-  doctest GenNNTP
+  doctest GenNNTP, tags: [
+    capabilities: ["READER", "POST"],
+    server: true,
+  ]
 
   setup do
     on_exit(fn ->
@@ -1341,6 +1344,11 @@ defmodule GenNNTPTest do
     test "command/2 default to empty arguments", %{socket: socket} do
       assert {:ok, response} = GenNNTP.command(socket, "QUIT")
       assert response =~ ~r/^205 /
+    end
+
+    test "response is trimmed/chommed", %{socket: socket} do
+      assert {:ok, response} = GenNNTP.command(socket, "QUIT")
+      refute response =~ "\r\n"
     end
 
     test "handles multi-line response", context do

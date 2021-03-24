@@ -2,48 +2,50 @@ defmodule GenNNTP do
   @moduledoc ~S"""
   The NNTP client and server library.
 
-  This module provides both the behaviour for an NNTP server, and the client API
-  to interact with a NNTP server.
+  This module provides both the behaviour for an NNTP server, and the client
+  API to interact with a NNTP server.
+
+  All functionality is defined in `:gen_nntp`. This Elixir module is just a
+  wrapper for `:gen_nntp`.
 
   ## Example
 
-  The GenNNTP behaviour abstracts the common NNTP client-server interaction.
+  The `GenNNTP` behaviour abstracts the common NNTP client-server interaction.
   Developers are only required to implement the callbacks and functionality
   they are interested in to respond to client's commands, per specs.
 
   Let's start with a code example and then explore the available callbacks.
-  Imagine we want a NNTP server that serves content from a directory.
+  Imagine we want a NNTP server that keeps data in memory.
 
-      defmodule NServ do
+      defmodule InMemoryNNTP do
         @behaviour GenNNTP
 
         # Callbacks
 
         @impl true
-        def init(datadir) do
-          {:ok, datadir}
+        def init(data) do
+          {:ok, data}
         end
 
         @impl true
-        def handle_CAPABILITIES(datadir) do
-          {:ok, ["READER"], datadir}
+        def handle_CAPABILITIES(data) do
+          {:ok, ["READER", "POST"], data}
         end
 
         @impl true
-        def handle_HELP(datadir) do
-          {:ok, "This is some help text", datadir}
+        def handle_HELP(data) do
+          {:ok, "This NNTP server only keeps data in memory.", data}
         end
-
       end
 
       # Start the server
-      {:ok, pid} = GenNNTP.start(NServ, "priv", port: 6791)
+      {:ok, pid} = GenNNTP.start(InMemoryNNTP, port: 6791)
 
       # This is the client
       {:ok, socket} = GenNNTP.connect("localhost", 6791)
 
       {:ok, response} = GenNNTP.command(socket, "CAPABILITIES")
-      #=> {:ok, "101 Capability list:\r\nVERSION 2\r\nREADER"}
+      #=> {:ok, "101 Capability list:\r\nVERSION 2\r\nREADER\r\nPOST"}
 
   We start our `NServ` by calling `start/3`, passing the module
   with the server implementation and its initial argument (a path to a folder
@@ -52,17 +54,159 @@ defmodule GenNNTP do
 
   Every time you do a `GenNNTP.command/2`, the client will send a command that
   must be handled by one of the callbacks defined in the GenNNTP, based on the
-  issued command. There are many callbckas to be implemented when you use a
+  issued command. There are many callbacks to be implemented when you use a
   `GenNNTP`. The required callbacks are `c:init/1`, `c:handle_CAPABILITIES/1`
   and `c:handle_HELP/1`. Other callbacks are optional in the sense that they are
   still required to be implemented when your server has the capability for them.
   For example, if your server has "READER" capability, you MUST provide these
   callbacks: `c:handle_GROUP/2`, `c:handle_LISTGROUP/2`, `c:handle_NEXT/2`,
   `c:handle_LAST/2`, `c:handle_ARTICLE/2`, `c:handle_HEAD/2`, `c:handle_BODY/2`,
-  `c:handle_STAT/2`.
+  `c:handle_STAT/2`. Similarly, if your server has "POST" capability, you MUST
+  provide `c:handle_POST/2` callback.
+
+  ## Handling commands
+
+  Our example advertises the "POST" capability, so we need to define a callback
+  to handle the "POST" command from client. This aptly named `c:handle_POST/2`
+  receives a map of type `t:article/0` and can decide to accept or reject it.
+
+  Do note that `GenNNTP` abstracts away all the command parsing and response's
+  codes, so that the callback only needs to, well, "handle" the corresponding
+  argument, and returns an ok-tuple to accept or an error-tuple to reject.
+
+  In our example NNTP server, we simply accept any article and store into our
+  internal in-memory database.
+
+      defmodule InMemoryNNTP do
+        @behaviour GenNNTP
+
+        # Callbacks
+
+        @impl true
+        def init(data) do
+          {:ok, data}
+        end
+
+        @impl true
+        def handle_CAPABILITIES(data) do
+          {:ok, ["READER", "POST"], data}
+        end
+
+        @impl true
+        def handle_POST(article, data) do
+          {:ok, [article | data]}
+        end
+
+        @impl true
+        def handle_HELP(data) do
+          {:ok, "This NNTP server only keeps data in memory.", data}
+        end
+      end
+
+      # Start the server
+      {:ok, pid} = GenNNTP.start(InMemoryNNTP, port: 6791)
+
+      # This is the client
+      {:ok, socket} = GenNNTP.connect("localhost", 6791)
+
+      # POST article
+      article = %{
+        id: "<test@post>",
+        headers: %{
+          "Message-ID" => "<test@post>",
+          "From" => "\"Demo User\" <nobody@example.net>",
+          "Newsgroups" => "misc.test",
+          "Subject" => "I am just a test article",
+          "Organization" => "An Example Net",
+        },
+        body: "This is a test article."
+      }
+      {:ok, response} = GenNNTP.command(socket, "POST", [article])
+      #=> {:ok, "240 Article received OK"}
+
+  Our NNTP server also advertises the "READER" capability, so we want to at
+  least let the clients fetch an article from our server. We do that by adding
+  a `c:handle_ARTICLE/2` callback to "handle" the "ARTICLE" command.
+
+  This callback is particularly interesting in which it can take 2 types of
+  arguments: either a message ID or a tuple of article number and its group.
+  For the sake of simplicity, we only handle the message ID for our example.
+  In actual implementation, we will also need to add `c:handle_GROUP/2` and/or
+  `c:handle_LISTGROUP/2` to let the user select a newsgroup. This is because
+  the second type of argument for `c:handle_ARTICLE/2` requires a newsgroup to
+  be selected first.
+
+  In our example here, we simply retrieve the article matching the ID from our
+  internal database, or return with `false` when we can't find it. For matching
+  article, we also return the article number. Because we don't implement the
+  groups, we can return 0 here.
+
+      defmodule InMemoryNNTP do
+        @behaviour GenNNTP
+
+        # Callbacks
+
+        @impl true
+        def init(data) do
+          {:ok, data}
+        end
+
+        @impl true
+        def handle_CAPABILITIES(data) do
+          {:ok, ["READER", "POST"], data}
+        end
+
+        @impl true
+        def handle_POST(article, data) do
+          {:ok, [article | data]}
+        end
+
+        @impl true
+        def handle_ARTICLE(message_id, data) when is_binary(message_id) do
+          result = Enum.find(data, false, fn
+            (%{id: ^message_id}) -> true
+            (_) -> false
+          end)
+
+          case result do
+            false -> {:ok, false, data}
+            article -> {:ok, {0, article}, data}
+          end
+        end
+
+        @impl true
+        def handle_HELP(data) do
+          {:ok, "This NNTP server only keeps data in memory.", data}
+        end
+      end
+
+      # Start the server
+      {:ok, pid} = GenNNTP.start(InMemoryNNTP, port: 6791)
+
+      # This is the client
+      {:ok, socket} = GenNNTP.connect("localhost", 6791)
+
+      # POST article
+      article = %{
+        id: "<test@post>",
+        headers: %{
+          "Message-ID" => "<test@post>",
+          "From" => "\"Demo User\" <nobody@example.net>",
+          "Newsgroups" => "misc.test",
+          "Subject" => "I am just a test article",
+          "Organization" => "An Example Net",
+        },
+        body: "This is a test article."
+      }
+      {:ok, response} = GenNNTP.command(socket, "POST", [article])
+
+      # ARTICLE
+      {:ok, response} = GenNNTP.command(socket, "ARTICLE", ["<test@post>"])
+      #=> {:ok, "220 0 "<test@post>"\r\nMessage-ID: <test@post>\r\n...\r\n\r\nThis is a test article."}
   """
 
   @type option :: :gen_nntp.option()
+  @type article :: :gen_nntp.article()
 
   @typep state :: any
 
@@ -72,7 +216,7 @@ defmodule GenNNTP do
   @doc """
   Starts a NNTP server with a callback module.
 
-  Similar to starting a `gen_server`.
+  Similar to starting a `GenServer`.
   """
   @spec start(module(), any, [option]) :: :gen_nntp.on_start()
   defdelegate start(module, args, options), to: :gen_nntp
@@ -86,17 +230,65 @@ defmodule GenNNTP do
   defdelegate stop(ref), to: :gen_nntp
 
   @doc """
-  Connects to a NNTP server.
+  Connects to a NNTP server and receives the greeting.
+
+  ## Examples:
+
+      iex> {:ok, socket, _greeting} = GenNNTP.connect()
+      iex> is_port(socket)
+      true
+
+      iex> {:ok, socket, _greeting} = GenNNTP.connect("localhost")
+      iex> is_port(socket)
+      true
+
+      iex> {:ok, socket, _greeting} = GenNNTP.connect("localhost", 119)
+      iex> is_port(socket)
+      true
+
+      iex> {:ok, socket, _greeting} = GenNNTP.connect("localhost", 119, [])
+      iex> is_port(socket)
+      true
+
+      iex> {:ok, _socket, "200 " <> _} = GenNNTP.connect("localhost", 119, [])
   """
   defdelegate connect(address \\ "localhost", port \\ @port, options \\ []), to: :gen_nntp
 
-  @doc """
+  @doc ~S"""
   Sends a command and receives server's response.
 
-  Both single and multi-line response are handled.
+  Both single and multi-line response are handled. The terminating
+  line in a multi-line response is discarded, and the whole response
+  is trimmed for whitespaces.
 
   For commands that are followed by a multi-line data block, such as
-  "POST", place the block as the argument to `command/3` call.
+  "POST", place the data block as the argument to `command/3` call.
+
+  The arguments will be converted to binary when possible.
+
+  ## Examples
+
+      iex> {:ok, socket, _greeting} = GenNNTP.connect()
+      iex> GenNNTP.command(socket, "HELP")
+      {:ok, "100 Help text follows\r\nThis is some help text."}
+
+      iex> {:ok, socket, _greeting} = GenNNTP.connect()
+      iex> GenNNTP.command(socket, "CAPABILITIES")
+      {:ok, "101 Capability list:\r\nVERSION 2\r\nREADER\r\n\POST"}
+
+      iex> {:ok, socket, _greeting} = GenNNTP.connect()
+      iex> article = %{
+      ...>   headers: %{
+      ...>     "Message-ID" => "<test@post>",
+      ...>     "From" => "\"Demo User\" <nobody@example.net>",
+      ...>     "Newsgroups" => "misc.test",
+      ...>     "Subject" => "I am just a test article",
+      ...>     "Organization" => "An Example Net",
+      ...>   },
+      ...>   body: "This is a test article for posting",
+      ...> }
+      iex> GenNNTP.command(socket, "POST", [article])
+      {:ok, "240 Article received OK"}
   """
   defdelegate command(socket, command, args \\ []), to: :gen_nntp
 

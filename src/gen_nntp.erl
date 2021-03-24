@@ -137,7 +137,7 @@
 -callback handle_POST(article(), state()) ->
             {ok, state()} | {error, Reason :: binary(), state()}.
 
--callback handle_HELP(state()) -> {ok, HelpText :: [binary()], state()}.
+-callback handle_HELP(state()) -> {ok, HelpText :: binary(), state()}.
 
 -callback handle_command(Command :: binary(), state()) ->
             {reply, Response :: binary(), state()}
@@ -268,8 +268,11 @@ recv(Socket, <<"LISTGROUP">>) ->
   multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
 recv(Socket, <<"ARTICLE">>) ->
   multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, <<"HELP">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
 recv(Socket, _Command) ->
-  gen_tcp:recv(Socket, 0, 1000).
+  {ok, Line} = gen_tcp:recv(Socket, 0, 1000),
+  {ok, string:chomp(Line)}.
 
 %% ==================================================================
 %% ranch_protocol Callbacks

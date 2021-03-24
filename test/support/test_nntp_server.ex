@@ -168,6 +168,8 @@ defmodule TestNNTPServer do
       {:error, reason, state} ->
         client = put_in(client[:state], state)
         {:error, reason, client}
+      default ->
+        default
     end
   end
 
@@ -175,12 +177,12 @@ defmodule TestNNTPServer do
   def handle_HELP(client) do
     state = client[:state]
 
-    case maybe_apply(client, :handle_HELP, [state], {:ok, "", state}) do
+    case maybe_apply(client, :handle_HELP, [state], {:ok, "This is some help text.", state}) do
       {:ok, help_text, state} ->
         client = put_in(client[:state], state)
         {:ok, help_text, client}
-      other ->
-        other
+      default ->
+        default
     end
   end
 

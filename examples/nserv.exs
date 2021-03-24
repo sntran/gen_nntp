@@ -71,8 +71,6 @@ defmodule NServ do
     |> File.stream!([], String.to_integer(zzz))
     |> Enum.at(String.to_integer(xxx))
 
-    IO.inspect(body)
-
     article = %{
       id: message_id,
       headers: %{
