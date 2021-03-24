@@ -1233,12 +1233,6 @@ defmodule GenNNTPTest do
       assert response =~ ~r/^441 /
     end
 
-    # Helpers
-    defp to_line(headers) when is_map(headers) do
-      Enum.map_join(headers, "\r\n", &to_line/1)
-    end
-
-    defp to_line({k, v}), do: "#{ k }: #{ v }"
   end
 
   describe "DATE command" do
@@ -1331,19 +1325,13 @@ defmodule GenNNTPTest do
   end
 
   describe "command/3" do
+    @describetag capabilities: ["READER", "IHAVE", "POST", "NEWNEWS", "HDR", "OVER", "LIST", "MODE-READER"]
 
-    setup context do
-      capabilities = context[:capabilities] || ["READER", "IHAVE", "POST", "NEWNEWS", "HDR", "OVER", "LIST", "MODE-READER"]
-
-      TestNNTPServer.start(
-        handle_CAPABILITIES: fn(state) ->
-          {:ok, capabilities, state}
-        end
-      )
-      {:ok, socket, _greeting} = GenNNTP.connect()
-
-      %{socket: socket, capabilities: capabilities}
-    end
+    setup [
+      :setup_articles, :setup_groups, :setup_group_articles,
+      :setup_CAPABILITIES, :setup_GROUP, :setup_ARTICLE, :setup_POST,
+      :setup_server, :setup_socket
+    ]
 
     test "sends QUIT command", %{socket: socket} do
       assert {:ok, response} = GenNNTP.command(socket, "QUIT", [])
@@ -1366,6 +1354,48 @@ defmodule GenNNTPTest do
       """)
     end
 
+    test "command/3 with arguments", context do
+      %{socket: socket, articles: articles} = context
+
+      message_id = "<45223423@example.com>"
+      article_number = 3000239
+      group_name = "misc.test"
+
+      %{headers: headers, body: body} = Enum.find(articles, &(match_id(&1, message_id)))
+
+      assert {:ok, response} = GenNNTP.command(socket, "ARTICLE", [message_id])
+      assert response === String.trim("""
+      220 0 #{ message_id }\r
+      #{ to_line(headers) }\r
+      \r
+      #{ body }
+      """)
+
+      # Calling "GROUP" to set the current group.
+      {:ok, _response} = GenNNTP.command(socket, "GROUP", [group_name])
+
+      assert {:ok, response} = GenNNTP.command(socket, "ARTICLE", [article_number])
+      assert response === String.trim("""
+      220 #{ article_number } #{ message_id }\r
+      #{ to_line(headers) }\r
+      \r
+      #{ body }
+      """)
+
+      article = %{
+        headers: %{
+          "Message-ID" => "<test@post>",
+          "From" => "\"Demo User\" <nobody@example.net>",
+          "Newsgroups" => "misc.test",
+          "Subject" => "I am just a test article",
+          "Organization" => "An Example Net",
+        },
+        body: "This is a test article for posting"
+      }
+      assert {:ok, response} = GenNNTP.command(socket, "POST", [article])
+      assert response =~ ~r/^240 /
+    end
+
   end
 
   describe "server interaction" do
@@ -1386,5 +1416,12 @@ defmodule GenNNTPTest do
     end
 
   end
+
+  # Helpers
+  defp to_line(headers) when is_map(headers) do
+    Enum.map_join(headers, "\r\n", &to_line/1)
+  end
+
+  defp to_line({k, v}), do: "#{ k }: #{ v }"
 
 end

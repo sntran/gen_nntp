@@ -1,7 +1,7 @@
 defmodule GenNntp.MixProject do
   use Mix.Project
 
-  @version "0.20.0"
+  @version "0.21.0"
 
   def project do
     [

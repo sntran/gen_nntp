@@ -13,7 +13,7 @@ The package can be installed by adding `gen_nntp` to your list of dependencies i
 ```elixir
 def deps do
   [
-    {:gen_nntp, "~> 0.20.0"}
+    {:gen_nntp, "~> 0.21.0"}
   ]
 end
 ```
@@ -42,7 +42,7 @@ Documentation can be found at [https://hexdocs.pm/gen_nntp](https://hexdocs.pm/g
 - [ ] OVER
 - [ ] LIST OVERVIEW.FMT
 - [x] POST
-- [ ] ARTICLE
+- [x] ARTICLE
 - [x] BODY
 - [x] DATE
 - [x] GROUP

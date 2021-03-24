@@ -234,7 +234,11 @@ connect(Address, Port, _Options) ->
 %%-------------------------------------------------------------------
 %% @doc Sends a command to a NNTP socket
 %%
-%% The function will also wait for the response from server.
+%% The function will also wait for the response from server, both
+%% single and mult-line responses.
+%%
+%% For commands that are followed by a multi-line data block, such as
+%% "POST", place the block as the argument to `command/3` call.
 %% @end
 %%-------------------------------------------------------------------
 -spec command(socket(), binary()) -> {ok, binary()} | {error, recv_error()}.
@@ -242,8 +246,20 @@ command(Socket, Commamd) ->
   command(Socket, Commamd, []).
 
 -spec command(socket(), binary(), Args :: list()) -> {ok, binary()} | {error, recv_error()}.
-command(Socket, Command, _Args) when is_binary(Command) ->
-  ok = gen_tcp:send(Socket, <<Command/binary, "\r\n">>),
+command(Socket, <<"POST">> = Command, [Article]) ->
+  EmptyList = [],
+  {ok, Response} = command(Socket, Command, EmptyList),
+  case Response of
+    <<"340 ", _/binary>> ->
+      MultiLine = join(<<"\r\n">>, [to_binary(Article), <<".">>]),
+      command(Socket, MultiLine, EmptyList);
+    <<"440 ">> ->
+      {ok, Response}
+  end;
+
+command(Socket, Command, Args) when is_binary(Command), is_list(Args) ->
+  Line = join(<<" ">>, [Command | to_binary(Args)]),
+  ok = gen_tcp:send(Socket, [Line, <<"\r\n">>]),
   recv(Socket, Command).
 
 recv(Socket, <<"CAPABILITIES">>) ->
@@ -710,8 +726,7 @@ handle_article(_Type, <<"">>, #client{article_number = invalid} = Client) ->
 
 handle_article(Type, <<"">>, #client{article_number = ArticleNumber} = Client) ->
   % @FIXME: Double conversion.
-  ArticleNumberBinary = integer_to_binary(ArticleNumber),
-  handle_article(Type, ArticleNumberBinary, Client);
+  handle_article(Type, to_binary(ArticleNumber), Client);
 
 % Client requests for an article by message ID or article number.
 handle_article(Type, Arg, Client) ->
@@ -744,7 +759,7 @@ handle_article(Type, Arg, Client) ->
             % Article specified by article number exists
             {Number, #{id := Id} = Article} ->
               Response = join(<<"\r\n">>, [
-                join(<<" ">>, [SuccessCode, integer_to_binary(Number), Id]),
+                join(<<" ">>, [SuccessCode, to_binary(Number), Id]),
                 to_binary(Article),
                 <<".">>
               ]),
@@ -758,7 +773,7 @@ handle_article(Type, Arg, Client) ->
 
             % Article specified by message ID exists
             {Number, #{id := Id} = Article} ->
-              Line = join(<<" ">>, [SuccessCode, integer_to_binary(Number), Id]),
+              Line = join(<<" ">>, [SuccessCode, to_binary(Number), Id]),
 
               Response = case to_binary(Article) of
                 <<"">> -> Line;
@@ -844,6 +859,14 @@ join(Separator, [H|T]) ->
   lists:foldl(fun (Value, Acc) ->
     <<Acc/binary, Separator/binary, Value/binary>>
   end, H, T).
+
+% @TODO: Tail-recursion?
+to_binary([]) -> [];
+to_binary([H | T]) ->
+  [to_binary(H) | to_binary(T)];
+
+to_binary(Number) when is_integer(Number) -> integer_to_binary(Number);
+to_binary(Binary) when is_binary(Binary) -> Binary;
 
 % Full article
 to_binary(#{headers := Headers, body := Body}) ->

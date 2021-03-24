@@ -92,6 +92,11 @@ defmodule GenNNTP do
 
   @doc """
   Sends a command and receives server's response.
+
+  Both single and multi-line response are handled.
+
+  For commands that are followed by a multi-line data block, such as
+  "POST", place the block as the argument to `command/3` call.
   """
   defdelegate command(socket, command, args \\ []), to: :gen_nntp
 
