@@ -226,7 +226,7 @@ connect(Address, Port, _Options) ->
   case gen_tcp:connect(Address, Port, Options) of
     {ok, Socket} ->
       {ok, Greeting} = gen_tcp:recv(Socket, 0, 1000),
-      {ok, Socket, Greeting};
+      {ok, Socket, string:chomp(Greeting)};
     {error, Reason} ->
       {error, Reason}
   end.
@@ -808,6 +808,11 @@ handle_article(Type, Arg, Client) ->
 multiline(_Socket, {error, Reason}) ->
   {error, Reason};
 
+% 4xx response is an error in a single line.
+multiline(_Socket, {ok, <<"4", _/binary>> = Acc}) ->
+  {ok, string:chomp(Acc)};
+
+% We only need to handle multi-line response with 2xx code.
 multiline(Socket, {ok, Acc}) ->
   case gen_tcp:recv(Socket, 0, 1000) of
     % End of the multi-line response.

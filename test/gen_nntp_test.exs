@@ -1402,6 +1402,10 @@ defmodule GenNNTPTest do
       }
       assert {:ok, response} = GenNNTP.command(socket, "POST", [article])
       assert response =~ ~r/^240 /
+
+      # Handles error with command that usually has multi-line response
+      assert {:ok, response} = GenNNTP.command(socket, "ARTICLE", ["<i.am.not.there@example.com>"])
+      assert response =~ ~r/^430 /
     end
 
   end
