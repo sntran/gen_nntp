@@ -264,9 +264,27 @@ command(Socket, Command, Args) when is_binary(Command), is_list(Args) ->
 
 recv(Socket, <<"CAPABILITIES">>) ->
   multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, <<"LIST">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
 recv(Socket, <<"LISTGROUP">>) ->
   multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
 recv(Socket, <<"ARTICLE">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, <<"HEAD">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, <<"BODY">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, <<"OVER">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, <<"XOVER">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, <<"HDR">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, <<"XHDR">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, <<"NEWNEWS">>) ->
+  multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
+recv(Socket, <<"NEWGROUPS">>) ->
   multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
 recv(Socket, <<"HELP">>) ->
   multiline(Socket, gen_tcp:recv(Socket, 0, 1000));
