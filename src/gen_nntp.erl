@@ -235,7 +235,7 @@ connect(Address, Port, _Options) ->
 %% @doc Sends a command to a NNTP socket
 %%
 %% The function will also wait for the response from server, both
-%% single and mult-line responses.
+%% single and multi-line responses.
 %%
 %% For commands that are followed by a multi-line data block, such as
 %% "POST", place the block as the argument to `command/3` call.
@@ -837,7 +837,7 @@ multiline(Socket, {ok, Acc}) ->
     {ok, <<".\r\n">>} ->
       {ok, string:chomp(Acc)};
     {ok, Line} when is_binary(Line) ->
-      multiline(Socket, {ok, <<Acc/binary, Line/binary>>});
+      multiline(Socket, {ok, <<Acc/binary, "\r\n", Line/binary>>});
     {error, Reason} ->
       {error, Reason}
   end.
