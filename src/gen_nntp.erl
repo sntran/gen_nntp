@@ -714,7 +714,7 @@ handle_command(<<"HELP">>, Client) ->
 % MUST acknowledge the QUIT command and then close the connection to
 % the client.
 handle_command(<<"QUIT">>, Client) ->
-  #client{module = Module, state = State} = Client
+  #client{module = Module, state = State} = Client,
   Client1 = case erlang:function_exported(Module, handle_QUIT, 1) of
     false ->
       Client;
