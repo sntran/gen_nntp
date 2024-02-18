@@ -835,9 +835,9 @@ multiline(Socket, {ok, Acc}) ->
   case gen_tcp:recv(Socket, 0, 1000) of
     % End of the multi-line response.
     {ok, <<".\r\n">>} ->
-      {ok, string:chomp(Acc)};
+      {ok, re:replace(Acc, "^\\s+|\\s+$", "", [{return, binary}, global])};
     {ok, Line} when is_binary(Line) ->
-      multiline(Socket, {ok, <<Acc/binary, "\r\n", Line/binary>>});
+      multiline(Socket, {ok, <<Acc/binary, Line/binary>>});
     {error, Reason} ->
       {error, Reason}
   end.
