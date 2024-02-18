@@ -1359,7 +1359,7 @@ defmodule GenNNTPTest do
       101 Capability list:\r
       VERSION 2\r
       #{ Enum.join(capabilities, "\r\n")}\r
-      """)
+      """
     end
 
     test "command/3 with arguments", context do
