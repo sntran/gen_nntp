@@ -1355,10 +1355,10 @@ defmodule GenNNTPTest do
       %{socket: socket, capabilities: capabilities} = context
 
       assert {:ok, response} = GenNNTP.command(socket, "CAPABILITIES")
-      assert response === String.trim("""
+      assert response === """
       101 Capability list:\r
       VERSION 2\r
-      #{ Enum.join(capabilities, "\r\n")}
+      #{ Enum.join(capabilities, "\r\n")}\r
       """)
     end
 
@@ -1372,23 +1372,23 @@ defmodule GenNNTPTest do
       %{headers: headers, body: body} = Enum.find(articles, &(match_id(&1, message_id)))
 
       assert {:ok, response} = GenNNTP.command(socket, "ARTICLE", [message_id])
-      assert response === String.trim("""
+      assert response === """
       220 0 #{ message_id }\r
       #{ to_line(headers) }\r
       \r
-      #{ body }
-      """)
+      #{ body }\r
+      """
 
       # Calling "GROUP" to set the current group.
       {:ok, _response} = GenNNTP.command(socket, "GROUP", [group_name])
 
       assert {:ok, response} = GenNNTP.command(socket, "ARTICLE", [article_number])
-      assert response === String.trim("""
+      assert response === """
       220 #{ article_number } #{ message_id }\r
       #{ to_line(headers) }\r
       \r
-      #{ body }
-      """)
+      #{ body }\r
+      """
 
       article = %{
         headers: %{

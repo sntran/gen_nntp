@@ -281,11 +281,11 @@ defmodule GenNNTP do
 
       iex> {:ok, socket, _greeting} = GenNNTP.connect()
       iex> GenNNTP.command(socket, "HELP")
-      {:ok, "100 Help text follows\r\nThis is some help text."}
+      {:ok, "100 Help text follows\r\nThis is some help text.\r\n"}
 
       iex> {:ok, socket, _greeting} = GenNNTP.connect()
       iex> GenNNTP.command(socket, "CAPABILITIES")
-      {:ok, "101 Capability list:\r\nVERSION 2\r\nREADER\r\n\POST"}
+      {:ok, "101 Capability list:\r\nVERSION 2\r\nREADER\r\n\POST\r\n"}
 
       iex> {:ok, socket, _greeting} = GenNNTP.connect()
       iex> article = %{
