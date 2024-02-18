@@ -541,6 +541,13 @@ defmodule GenNNTP do
   @callback handle_HELP(state) :: {:ok, help_text :: String.t(), state}
 
   @doc """
+  Invoked when a client quits.
+
+  Returning `{:ok, new_state}` to close the connection.
+  """
+  @callback handle_QUIT(state) :: {:ok, state}
+
+  @doc """
   Invoked when an uknown command is asked by the client.
 
   This optional callback can be used to handle commands not understood by the
@@ -568,6 +575,7 @@ defmodule GenNNTP do
     handle_BODY: 2,
     handle_STAT: 2,
     handle_POST: 2,
+    handle_QUIT: 1,
     handle_command: 2
   ]
 end

@@ -139,6 +139,8 @@
 
 -callback handle_HELP(state()) -> {ok, HelpText :: binary(), state()}.
 
+-callback handle_QUIT(state()) -> {ok, state()}.
+
 -callback handle_command(Command :: binary(), state()) ->
             {reply, Response :: binary(), state()}
             | {noreply, state()}
@@ -155,6 +157,7 @@
   handle_BODY/2,
   handle_STAT/2,
   handle_POST/2,
+  handle_QUIT/1,
   handle_command/2
 ]).
 
